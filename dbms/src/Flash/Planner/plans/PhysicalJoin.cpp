@@ -40,6 +40,9 @@
 #include <Flash/Planner/FinalizeHelper.h>
 #include <Flash/Planner/PhysicalPlanHelper.h>
 #include <Flash/Planner/plans/PhysicalJoin.h>
+#include <Flash/Planner/plans/PhysicalJoinBuild.h>
+#include <Flash/Planner/plans/PhysicalJoinProbe.h>
+#include <Flash/Planner/plans/PhysicalPipelineBreaker.h>
 #include <Interpreters/Context.h>
 #include <common/logger_useful.h>
 #include <fmt/format.h>
@@ -61,8 +64,11 @@ void recordJoinExecuteInfo(
 {
     JoinExecuteInfo join_execute_info;
     join_execute_info.build_side_root_executor_id = build_side_executor_id;
-    join_execute_info.join_ptr = join_ptr;
-    assert(join_execute_info.join_ptr);
+    if (!dag_context.is_pipeline_mode)
+    {
+        join_execute_info.join_ptr = join_ptr;
+        assert(join_execute_info.join_ptr);
+    }
     dag_context.getJoinExecuteInfoMap()[executor_id] = std::move(join_execute_info);
 }
 
@@ -161,19 +167,53 @@ PhysicalPlanNodePtr PhysicalJoin::build(
 
     recordJoinExecuteInfo(dag_context, executor_id, build_plan->execId(), join_ptr);
 
-    auto physical_join = std::make_shared<PhysicalJoin>(
-        executor_id,
-        join_output_schema,
-        log->identifier(),
-        probe_plan,
-        build_plan,
-        join_ptr,
-        columns_added_by_join,
-        probe_side_prepare_actions,
-        build_side_prepare_actions,
-        is_tiflash_right_join,
-        Block(join_output_schema));
-    return physical_join;
+    if (!context.getDAGContext()->is_pipeline_mode)
+    {
+        auto physical_join = std::make_shared<PhysicalJoin>(
+            executor_id,
+            join_output_schema,
+            log->identifier(),
+            probe_plan,
+            build_plan,
+            join_ptr,
+            columns_added_by_join,
+            probe_side_prepare_actions,
+            build_side_prepare_actions,
+            is_tiflash_right_join,
+            Block(join_output_schema));
+        return physical_join;
+    }
+    else
+    {
+        auto physical_join_build = std::make_shared<PhysicalJoinBuild>(
+            executor_id,
+            build_side_prepare_actions->getSampleBlock().getNamesAndTypes(),
+            log->identifier(),
+            build_plan,
+            join_ptr,
+            build_side_prepare_actions);
+        physical_join_build->notTiDBOperator();
+
+        auto physical_join_probe = std::make_shared<PhysicalJoinProbe>(
+            executor_id,
+            join_output_schema,
+            log->identifier(),
+            probe_plan,
+            join_ptr,
+            columns_added_by_join,
+            probe_side_prepare_actions,
+            is_tiflash_right_join,
+            Block(join_output_schema));
+
+        auto physical_breaker = std::make_shared<PhysicalPipelineBreaker>(
+            executor_id,
+            join_output_schema,
+            log->identifier(),
+            physical_join_build,
+            physical_join_probe);
+        physical_breaker->notTiDBOperator();
+        return physical_breaker;
+    }
 }
 
 void PhysicalJoin::probeSideTransform(DAGPipeline & probe_pipeline, Context & context, size_t max_streams)

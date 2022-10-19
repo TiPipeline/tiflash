@@ -14,11 +14,12 @@
 
 #pragma once
 
-#include <Core/QueryProcessingStage.h>
+#include <Flash/Executor/QueryExecutor.h>
 #include <DataStreams/BlockIO.h>
 #include <Interpreters/Context.h>
 
 namespace DB
 {
-BlockIO executeQuery(Context & context, bool internal = false);
+BlockIO executeQueryAsStream(Context & context, bool internal = false);
+QueryExecutorPtr executeQuery(Context & context, bool internal = false);
 } // namespace DB

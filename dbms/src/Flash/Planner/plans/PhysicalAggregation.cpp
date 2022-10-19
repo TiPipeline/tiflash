@@ -26,6 +26,9 @@
 #include <Flash/Planner/FinalizeHelper.h>
 #include <Flash/Planner/PhysicalPlanHelper.h>
 #include <Flash/Planner/plans/PhysicalAggregation.h>
+#include <Flash/Planner/plans/PhysicalFinalAggregation.h>
+#include <Flash/Planner/plans/PhysicalPartialAggregation.h>
+#include <Flash/Planner/plans/PhysicalPipelineBreaker.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -71,18 +74,57 @@ PhysicalPlanNodePtr PhysicalAggregation::build(
     /// project action after aggregation to remove useless columns.
     auto schema = PhysicalPlanHelper::addSchemaProjectAction(expr_after_agg_actions, analyzer.getCurrentInputColumns());
 
-    auto physical_agg = std::make_shared<PhysicalAggregation>(
-        executor_id,
-        schema,
-        log->identifier(),
-        child,
-        before_agg_actions,
-        aggregation_keys,
-        collators,
-        AggregationInterpreterHelper::isFinalAgg(aggregation),
-        aggregate_descriptions,
-        expr_after_agg_actions);
-    return physical_agg;
+    if (!context.getDAGContext()->is_pipeline_mode)
+    {
+        auto physical_agg = std::make_shared<PhysicalAggregation>(
+            executor_id,
+            schema,
+            log->identifier(),
+            child,
+            before_agg_actions,
+            aggregation_keys,
+            collators,
+            AggregationInterpreterHelper::isFinalAgg(aggregation),
+            aggregate_descriptions,
+            expr_after_agg_actions);
+        return physical_agg;
+    }
+    else
+    {
+        AggregateStorePtr aggregate_store = std::make_shared<AggregateStore>(
+            log->identifier(),
+            context.getFileProvider(),
+            true);
+
+        auto physical_partial_agg = std::make_shared<PhysicalPartialAggregation>(
+            executor_id,
+            NamesAndTypes{},
+            log->identifier(),
+            child,
+            before_agg_actions,
+            aggregation_keys,
+            collators,
+            AggregationInterpreterHelper::isFinalAgg(aggregation),
+            aggregate_descriptions,
+            aggregate_store);
+        physical_partial_agg->notTiDBOperator();
+
+        auto physical_final_agg = std::make_shared<PhysicalFinalAggregation>(
+            executor_id,
+            schema,
+            log->identifier(),
+            aggregate_store,
+            expr_after_agg_actions);
+
+        auto physical_breaker = std::make_shared<PhysicalPipelineBreaker>(
+            executor_id,
+            schema,
+            log->identifier(),
+            physical_partial_agg,
+            physical_final_agg);
+        physical_breaker->notTiDBOperator();
+        return physical_breaker;
+    }
 }
 
 void PhysicalAggregation::transformImpl(DAGPipeline & pipeline, Context & context, size_t max_streams)
@@ -119,7 +161,6 @@ void PhysicalAggregation::transformImpl(DAGPipeline & pipeline, Context & contex
         pipeline.streams.resize(1);
         pipeline.streams_with_non_joined_data.clear();
         pipeline.firstStream() = std::move(stream);
-
         restoreConcurrency(pipeline, context.getDAGContext()->final_concurrency, log);
     }
     else

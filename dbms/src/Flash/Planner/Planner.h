@@ -17,6 +17,7 @@
 #include <Common/Logger.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Flash/Coprocessor/DAGPipeline.h>
+#include <Flash/Executor/QueryExecutor.h>
 #include <Flash/Planner/PlanQuerySource.h>
 
 namespace DB
@@ -34,6 +35,8 @@ public:
     ~Planner() = default;
 
     BlockIO execute() override;
+
+    QueryExecutorPtr pipelineExecute(std::shared_ptr<ProcessListEntry> process_list_entry) const;
 
 private:
     DAGContext & dagContext() const;

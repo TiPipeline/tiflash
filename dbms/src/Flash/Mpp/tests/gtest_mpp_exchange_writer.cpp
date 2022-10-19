@@ -125,6 +125,7 @@ struct MockStreamWriter
     void write(tipb::SelectResponse &, uint16_t) { FAIL() << "cannot reach here, only consider CH Block format"; }
     void write(tipb::SelectResponse &) { FAIL() << "cannot reach here, only consider CH Block format"; }
     uint16_t getPartitionNum() const { return part_num; }
+    bool asyncWrite(const mpp::MPPDataPacket &, int16_t) { throw Exception("unsupport"); }
 
 private:
     MockStreamWriterChecker checker;

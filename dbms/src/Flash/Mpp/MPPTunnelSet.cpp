@@ -107,6 +107,13 @@ void MPPTunnelSetBase<Tunnel>::write(mpp::MPPDataPacket & packet, int16_t partit
 }
 
 template <typename Tunnel>
+bool MPPTunnelSetBase<Tunnel>::asyncWrite(const mpp::MPPDataPacket & packet, int16_t partition_id)
+{
+    checkPacketSize(packet.ByteSizeLong());
+    return tunnels[partition_id]->asyncWrite(packet);
+}
+
+template <typename Tunnel>
 void MPPTunnelSetBase<Tunnel>::registerTunnel(const MPPTaskId & receiver_task_id, const TunnelPtr & tunnel)
 {
     if (receiver_task_id_to_index_map.find(receiver_task_id) != receiver_task_id_to_index_map.end())

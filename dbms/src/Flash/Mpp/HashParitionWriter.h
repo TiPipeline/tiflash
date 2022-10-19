@@ -17,6 +17,7 @@
 #include <Flash/Coprocessor/ChunkCodec.h>
 #include <Flash/Coprocessor/DAGContext.h>
 #include <Flash/Coprocessor/DAGResponseWriter.h>
+#include <Flash/Mpp/AsyncWriter.h>
 #include <Flash/Mpp/TrackedMppDataPacket.h>
 #include <common/types.h>
 
@@ -24,6 +25,7 @@ namespace DB
 {
 template <class StreamWriterPtr>
 class HashPartitionWriter : public DAGResponseWriter
+    , public AsyncWriter
 {
 public:
     HashPartitionWriter(
@@ -36,12 +38,18 @@ public:
     void write(const Block & block) override;
     void finishWrite() override;
 
+    void asyncWrite(Block && block) override;
+    void asyncFinishWrite() override;
+    bool asyncIsReady() override;
+
 private:
     template <bool send_exec_summary_at_last>
     void partitionAndEncodeThenWriteBlocks();
 
     template <bool send_exec_summary_at_last>
     void writePackets(std::vector<TrackedMppDataPacket> & packets);
+
+    void asyncPartitionAndEncodeThenWriteBlocks();
 
     Int64 batch_send_min_limit;
     bool should_send_exec_summary_at_last;
@@ -52,6 +60,9 @@ private:
     size_t rows_in_blocks;
     uint16_t partition_num;
     std::unique_ptr<ChunkCodecStream> chunk_codec_stream;
+
+    // async
+    std::vector<std::pair<uint16_t, TrackedMppDataPacket>> not_ready_packets;
 };
 
 } // namespace DB

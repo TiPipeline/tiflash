@@ -23,6 +23,7 @@ class PhysicalLimit : public PhysicalUnary
 {
 public:
     static PhysicalPlanNodePtr build(
+        const Context & context,
         const String & executor_id,
         const LoggerPtr & log,
         const tipb::Limit & limit,
@@ -41,6 +42,12 @@ public:
     void finalize(const Names & parent_require) override;
 
     const Block & getSampleBlock() const override;
+
+    PhysicalPlanNodePtr cloneOne() const override
+    {
+        auto clone_one = std::make_shared<PhysicalLimit>(*this);
+        return clone_one;
+    }
 
 private:
     void transformImpl(DAGPipeline & pipeline, Context & context, size_t max_streams) override;

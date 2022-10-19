@@ -61,6 +61,7 @@ struct StreamWriter
     }
     // a helper function
     uint16_t getPartitionNum() { return 0; }
+    bool asyncWrite(const mpp::MPPDataPacket &, int16_t) { throw Exception("Unsupported"); }
 };
 
 using StreamWriterPtr = std::shared_ptr<StreamWriter>;

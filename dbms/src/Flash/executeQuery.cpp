@@ -16,7 +16,9 @@
 #include <Common/ProfileEvents.h>
 #include <Flash/Coprocessor/DAGContext.h>
 #include <Flash/Coprocessor/DAGQuerySource.h>
+#include <Flash/Executor/DataStreamExecutor.h>
 #include <Flash/Planner/PlanQuerySource.h>
+#include <Flash/Planner/Planner.h>
 #include <Flash/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -96,9 +98,31 @@ BlockIO executeDAG(IQuerySource & dag, Context & context, bool internal)
     dag_context.attachBlockIO(res);
     return res;
 }
+
+QueryExecutorPtr executePipeline(PlanQuerySource & plan, DAGContext & dag_context, Context & context, bool internal)
+{
+    dag_context.is_pipeline_mode = true;
+    const auto & logger = dag_context.log;
+    RUNTIME_ASSERT(logger);
+
+    prepareForExecute(context);
+
+    ProcessList::EntryPtr process_list_entry;
+    if (likely(!internal))
+    {
+        process_list_entry = getProcessListEntry(context, dag_context);
+        logQuery(plan.str(context.getSettingsRef().log_queries_cut_to_length), context, logger);
+    }
+
+    FAIL_POINT_TRIGGER_EXCEPTION(FailPoints::random_interpreter_failpoint);
+    auto interpreter = plan.interpreter(context, QueryProcessingStage::Complete);
+    const auto * planner = static_cast<Planner *>(interpreter.get());
+    assert(planner);
+    return planner->pipelineExecute(process_list_entry);
+}
 } // namespace
 
-BlockIO executeQuery(Context & context, bool internal)
+BlockIO executeQueryAsStream(Context & context, bool internal)
 {
     if (context.getSettingsRef().enable_planner)
     {
@@ -110,5 +134,24 @@ BlockIO executeQuery(Context & context, bool internal)
         DAGQuerySource dag(context);
         return executeDAG(dag, context, internal);
     }
+}
+
+QueryExecutorPtr executeQuery(Context & context, bool internal)
+{
+    RUNTIME_ASSERT(context.getDAGContext());
+    auto & dag_context = *context.getDAGContext();
+    if (dag_context.isMPPTask() && context.getSettingsRef().enable_planner && context.getSettingsRef().enable_pipeline)
+    {
+        PlanQuerySource plan(context);
+        if (plan.isSupportPipeline())
+        {
+            return executePipeline(plan, dag_context, context, internal);
+        }
+        else
+        {
+            return std::make_unique<DataStreamExecutor>(executeDAG(plan, context, internal));
+        }
+    }
+    return std::make_unique<DataStreamExecutor>(executeQueryAsStream(context, internal));
 }
 } // namespace DB

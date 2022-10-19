@@ -121,6 +121,17 @@ public:
         return ret;
     }
 
+    template <typename U, typename... Args>
+    MPMCQueueResult nativePush(Args &&... args)
+    {
+        auto ret = send_queue.template tryEmplaceSharedPtr<U>(std::forward<Args>(args)...);
+        if (ret == MPMCQueueResult::OK)
+        {
+            kickCompletionQueue();
+        }
+        return ret;
+    }
+
     /// Cancel the send queue, and set the cancel reason
     bool cancelWith(const String & reason)
     {

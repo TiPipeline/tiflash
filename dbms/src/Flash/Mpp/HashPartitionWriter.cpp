@@ -38,8 +38,8 @@ HashPartitionWriter<StreamWriterPtr>::HashPartitionWriter(
     rows_in_blocks = 0;
     partition_num = writer_->getPartitionNum();
     RUNTIME_CHECK(partition_num > 0);
-    RUNTIME_CHECK(dag_context.encode_type == tipb::EncodeType::TypeCHBlock);
-    chunk_codec_stream = std::make_unique<CHBlockChunkCodec>()->newCodecStream(dag_context.result_field_types);
+    RUNTIME_CHECK(encode_type == tipb::EncodeType::TypeCHBlock);
+    chunk_codec_stream = std::make_unique<CHBlockChunkCodec>()->newCodecStream(result_field_types);
 }
 
 template <class StreamWriterPtr>
@@ -59,7 +59,7 @@ template <class StreamWriterPtr>
 void HashPartitionWriter<StreamWriterPtr>::write(const Block & block)
 {
     RUNTIME_CHECK_MSG(
-        block.columns() == dag_context.result_field_types.size(),
+        block.columns() == result_field_types.size(),
         "Output column size mismatch with field type size");
     size_t rows = block.rows();
     rows_in_blocks += rows;
@@ -135,6 +135,93 @@ void HashPartitionWriter<StreamWriterPtr>::writePackets(std::vector<TrackedMppDa
         if (packet.chunks_size() > 0)
             writer->write(packet, part_id);
     }
+}
+
+template <class StreamWriterPtr>
+void HashPartitionWriter<StreamWriterPtr>::asyncWrite(Block && block)
+{
+    RUNTIME_CHECK_MSG(
+        block.columns() == result_field_types.size(),
+        "Output column size mismatch with field type size");
+    size_t rows = block.rows();
+    rows_in_blocks += rows;
+    if (rows > 0)
+    {
+        blocks.emplace_back(std::move(block));
+    }
+
+    if (static_cast<Int64>(rows_in_blocks) > batch_send_min_limit)
+        asyncPartitionAndEncodeThenWriteBlocks();
+}
+
+template <class StreamWriterPtr>
+void HashPartitionWriter<StreamWriterPtr>::asyncFinishWrite()
+{
+    asyncPartitionAndEncodeThenWriteBlocks();
+}
+
+template <class StreamWriterPtr>
+void HashPartitionWriter<StreamWriterPtr>::asyncPartitionAndEncodeThenWriteBlocks()
+{
+    if (blocks.empty())
+        return;
+
+    std::vector<TrackedMppDataPacket> tracked_packets(partition_num);
+
+    assert(rows_in_blocks > 0);
+    HashBaseWriterHelper::materializeBlocks(blocks);
+    Block dest_block = blocks[0].cloneEmpty();
+    std::vector<String> partition_key_containers(collators.size());
+
+    while (!blocks.empty())
+    {
+        const auto & block = blocks.back();
+        auto dest_tbl_cols = HashBaseWriterHelper::createDestColumns(block, partition_num);
+        HashBaseWriterHelper::computeHash(block, partition_num, collators, partition_key_containers, partition_col_ids, dest_tbl_cols);
+        blocks.pop_back();
+
+        for (size_t part_id = 0; part_id < partition_num; ++part_id)
+        {
+            dest_block.setColumns(std::move(dest_tbl_cols[part_id]));
+            size_t dest_block_rows = dest_block.rows();
+            if (dest_block_rows > 0)
+            {
+                chunk_codec_stream->encode(dest_block, 0, dest_block_rows);
+                tracked_packets[part_id].addChunk(chunk_codec_stream->getString());
+                chunk_codec_stream->clear();
+            }
+        }
+    }
+    assert(blocks.empty());
+    rows_in_blocks = 0;
+
+    assert(not_ready_packets.empty());
+    for (uint16_t part_id = 0; part_id < partition_num; ++part_id)
+    {
+        auto & packet = tracked_packets[part_id].getPacket();
+        if (packet.chunks_size() > 0)
+        {
+            if (!writer->asyncWrite(packet, part_id))
+                not_ready_packets.emplace_back(part_id, std::move(tracked_packets[part_id]));
+        }
+    }
+}
+
+template <class StreamWriterPtr>
+bool HashPartitionWriter<StreamWriterPtr>::asyncIsReady()
+{
+    if (not_ready_packets.empty())
+        return true;
+
+    auto iter = not_ready_packets.begin();
+    while (iter != not_ready_packets.end())
+    {
+        if (writer->asyncWrite(iter->second.getPacket(), iter->first))
+            iter = not_ready_packets.erase(iter);
+        else
+            ++iter;
+    }
+    return not_ready_packets.empty();
 }
 
 template class HashPartitionWriter<MPPTunnelSetPtr>;

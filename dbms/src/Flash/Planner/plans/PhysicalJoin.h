@@ -57,6 +57,12 @@ public:
 
     const Block & getSampleBlock() const override;
 
+    PhysicalPlanNodePtr cloneOne() const override
+    {
+        auto clone_one = std::make_shared<PhysicalJoin>(*this);
+        return clone_one;
+    }
+
 private:
     void probeSideTransform(DAGPipeline & probe_pipeline, Context & context, size_t max_streams);
 

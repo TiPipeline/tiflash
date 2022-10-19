@@ -58,6 +58,8 @@ public:
     void finishWrite();
     void registerTunnel(const MPPTaskId & id, const TunnelPtr & tunnel);
 
+    bool asyncWrite(const mpp::MPPDataPacket & packet, int16_t partition_id);
+
     TunnelPtr getTunnelByReceiverTaskId(const MPPTaskId & id);
 
     uint16_t getPartitionNum() const { return tunnels.size(); }

@@ -24,6 +24,9 @@
 #include <Flash/Planner/plans/PhysicalExchangeReceiver.h>
 #include <Interpreters/Context.h>
 #include <Storages/Transaction/TypeMapping.h>
+#include <Transforms/SquashTransform.h>
+#include <Transforms/ExchangeReceiverSource.h>
+#include <Transforms/TransformsPipeline.h>
 #include <fmt/format.h>
 
 namespace DB
@@ -58,6 +61,21 @@ PhysicalPlanNodePtr PhysicalExchangeReceiver::build(
         Block(schema),
         mpp_exchange_receiver);
     return physical_exchange_receiver;
+}
+
+void PhysicalExchangeReceiver::transform(TransformsPipeline & pipeline, Context &, size_t concurrency)
+{
+    bool enable_fine_grained_shuffle = enableFineGrainedShuffle(mpp_exchange_receiver->getFineGrainedShuffleStreamCount());
+    RUNTIME_CHECK(!enable_fine_grained_shuffle);
+
+    pipeline.init(concurrency);
+    pipeline.transform([&](auto & transforms) {
+        transforms->setSource(std::make_shared<ExchangeReceiverSource>(
+            mpp_exchange_receiver,
+            log->identifier(),
+            execId()));
+        transforms->append(std::make_shared<SquashTransform>(8192, 0, log->identifier()));
+    });
 }
 
 void PhysicalExchangeReceiver::transformImpl(DAGPipeline & pipeline, Context & context, size_t max_streams)

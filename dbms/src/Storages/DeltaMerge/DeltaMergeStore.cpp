@@ -39,6 +39,7 @@
 #include <Storages/Page/V2/VersionSet/PageEntriesVersionSetWithDelta.h>
 #include <Storages/PathPool.h>
 #include <Storages/Transaction/TMTContext.h>
+#include <Transforms/UnorderSource.h>
 #include <common/logger_useful.h>
 
 #include <atomic>
@@ -1027,6 +1028,73 @@ BlockInputStreams DeltaMergeStore::read(const Context & db_context,
         res.push_back(stream);
     }
     LOG_DEBUG(tracing_logger, "Read create stream done");
+
+    return res;
+}
+
+std::vector<SourcePtr> DeltaMergeStore::readSources(const Context & db_context,
+                                                    const DB::Settings & db_settings,
+                                                    const ColumnDefines & columns_to_read,
+                                                    const RowKeyRanges & sorted_ranges,
+                                                    size_t num_streams,
+                                                    UInt64 max_version,
+                                                    const RSOperatorPtr & filter,
+                                                    const String & tracing_id,
+                                                    bool keep_order,
+                                                    bool is_fast_scan,
+                                                    size_t expected_block_size,
+                                                    const SegmentIdSet & read_segments,
+                                                    size_t extra_table_id_index)
+{
+    // Use the id from MPP/Coprocessor level as tracing_id
+    auto dm_context = newDMContext(db_context, db_settings, tracing_id);
+    // If keep order is required, disable read thread.
+    auto enable_read_thread = db_context.getSettingsRef().dt_enable_read_thread && !keep_order;
+    // SegmentReadTaskScheduler and SegmentReadTaskPool use table_id + segment id as unique ID when read thread is enabled.
+    // 'try_split_task' can result in several read tasks with the same id that can cause some trouble.
+    // Also, too many read tasks of a segment with different small ranges is not good for data sharing cache.
+    SegmentReadTasks tasks = getReadTasksByRanges(*dm_context, sorted_ranges, num_streams, read_segments, /*try_split_task =*/!enable_read_thread);
+    auto log_tracing_id = getLogTracingId(*dm_context);
+    auto tracing_logger = log->getChild(log_tracing_id);
+    LOG_DEBUG(tracing_logger,
+              "Read create segment snapshot done, keep_order={} dt_enable_read_thread={} enable_read_thread={}",
+              keep_order,
+              db_context.getSettingsRef().dt_enable_read_thread,
+              enable_read_thread);
+
+    auto after_segment_read = [&](const DMContextPtr & dm_context_, const SegmentPtr & segment_) {
+        // TODO: Update the tracing_id before checkSegmentUpdate?
+        this->checkSegmentUpdate(dm_context_, segment_, ThreadType::Read);
+    };
+
+    GET_METRIC(tiflash_storage_read_tasks_count).Increment(tasks.size());
+    size_t final_num_stream = std::max(1, std::min(num_streams, tasks.size()));
+    auto read_task_pool = std::make_shared<SegmentReadTaskPool>(
+        physical_table_id,
+        dm_context,
+        columns_to_read,
+        filter,
+        max_version,
+        expected_block_size,
+        /* read_mode = */ is_fast_scan ? ReadMode::Fast : ReadMode::Normal,
+        std::move(tasks),
+        after_segment_read,
+        log_tracing_id,
+        enable_read_thread);
+
+    RUNTIME_CHECK(enable_read_thread);
+    std::vector<SourcePtr> res;
+    for (size_t i = 0; i < final_num_stream; ++i)
+    {
+        SourcePtr source = std::make_shared<UnorderSource>(
+            read_task_pool,
+            columns_to_read,
+            extra_table_id_index,
+            physical_table_id,
+            log_tracing_id);
+        res.push_back(source);
+    }
+    LOG_DEBUG(tracing_logger, "Read create source done");
 
     return res;
 }

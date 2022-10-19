@@ -36,6 +36,17 @@ struct PlanType
         TableScan = 11,
         MockTableScan = 12,
         Join = 13,
+        JoinProbe = 14,
+        JoinBuild = 15,
+        ResultHandler = 16,
+        FinalAggregation = 17,
+        PartialAggregation = 18,
+        NonJoinProbe = 19,
+        PipelineBreaker = 20,
+        PartialTopN = 21,
+        FinalTopN = 22,
+        PartialLimit = 23,
+        FinalLimit = 24,
     };
     PlanTypeEnum enum_value;
 

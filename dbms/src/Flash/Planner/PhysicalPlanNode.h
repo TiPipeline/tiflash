@@ -31,6 +31,8 @@ class DAGContext;
 class PhysicalPlanNode;
 using PhysicalPlanNodePtr = std::shared_ptr<PhysicalPlanNode>;
 
+struct TransformsPipeline;
+
 class PhysicalPlanNode
 {
 public:
@@ -69,6 +71,10 @@ public:
     void disableRestoreConcurrency() { is_restore_concurrency = false; }
 
     String toString();
+
+    virtual PhysicalPlanNodePtr cloneOne() const = 0;
+
+    virtual void transform(TransformsPipeline &, Context &, size_t) { throw Exception("Unsupport"); }
 
 protected:
     virtual void transformImpl(DAGPipeline & /*pipeline*/, Context & /*context*/, size_t /*max_streams*/){};

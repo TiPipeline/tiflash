@@ -35,6 +35,11 @@ namespace DB
 {
 class TMTContext;
 using TablesRegionInfoMap = std::unordered_map<Int64, std::reference_wrapper<const RegionInfoMap>>;
+
+struct TransformsPipeline;
+class Source;
+using SourcePtr = std::shared_ptr<Source>;
+
 /// DAGStorageInterpreter encapsulates operations around storage during interprete stage.
 /// It's only intended to be used by DAGQueryBlockInterpreter.
 /// After DAGStorageInterpreter::execute some of its members will be transferred to DAGQueryBlockInterpreter.
@@ -50,6 +55,7 @@ public:
     DISALLOW_MOVE(DAGStorageInterpreter);
 
     void execute(DAGPipeline & pipeline);
+    void execute(TransformsPipeline & pipeline);
 
     /// Members will be transferred to DAGQueryBlockInterpreter after execute
 
@@ -76,6 +82,7 @@ private:
         DAGPipeline & pipeline,
         size_t max_block_size);
     void buildLocalStreams(DAGPipeline & pipeline, size_t max_block_size);
+    std::vector<SourcePtr> buildLocalSources(size_t max_block_size);
 
     std::unordered_map<TableID, StorageWithStructureLock> getAndLockStorages(Int64 query_schema_version);
 
@@ -97,16 +104,23 @@ private:
     void executeCastAfterTableScan(
         size_t remote_read_streams_start_index,
         DAGPipeline & pipeline);
+    void executeCastAfterTableScan(
+        size_t remote_read_sources_start_index,
+        TransformsPipeline & pipeline);
 
     // before_where, filter_column_name, after_where
     std::tuple<ExpressionActionsPtr, String, ExpressionActionsPtr> buildPushDownFilter();
     void executePushedDownFilter(
         size_t remote_read_streams_start_index,
         DAGPipeline & pipeline);
+    void executePushedDownFilter(
+        size_t remote_read_sources_start_index,
+        TransformsPipeline & pipeline);
 
     void prepare();
 
     void executeImpl(DAGPipeline & pipeline);
+    void executeImpl(TransformsPipeline & pipeline);
 
 private:
     std::vector<ExtraCastAfterTSMode> is_need_add_cast_column;

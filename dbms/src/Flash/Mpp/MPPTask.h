@@ -19,6 +19,7 @@
 #include <Common/MemoryTracker.h>
 #include <DataStreams/BlockIO.h>
 #include <Flash/Coprocessor/DAGContext.h>
+#include <Flash/Executor/QueryExecutor.h>
 #include <Flash/Mpp/MPPReceiverSet.h>
 #include <Flash/Mpp/MPPTaskId.h>
 #include <Flash/Mpp/MPPTaskScheduleEntry.h>
@@ -35,6 +36,7 @@
 #include <atomic>
 #include <boost/noncopyable.hpp>
 #include <memory>
+#include <shared_mutex>
 #include <unordered_map>
 
 namespace DB
@@ -110,6 +112,8 @@ private:
 
     void initExchangeReceivers();
 
+    QueryExecutor * getQueryExecutorPtr();
+
     tipb::DAGRequest dag_req;
     mpp::TaskMeta meta;
     MPPTaskId id;
@@ -126,6 +130,9 @@ private:
     std::unique_ptr<DAGContext> dag_context;
 
     std::shared_ptr<ProcessListEntry> process_list_entry;
+
+    std::shared_mutex query_executor_mu;
+    QueryExecutorPtr query_executor = nullptr;
 
     std::atomic<TaskStatus> status{INITIALIZING};
     String err_string;

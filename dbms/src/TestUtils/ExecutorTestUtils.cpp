@@ -14,6 +14,7 @@
 
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Common/FmtUtils.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Debug/MockComputeServerManager.h>
 #include <Flash/Coprocessor/DAGQuerySource.h>
 #include <Flash/executeQuery.h>
@@ -98,10 +99,8 @@ void ExecutorTest::executeInterpreter(const String & expected_string, const std:
     context.context.setDAGContext(&dag_context);
     context.context.setExecutorTest();
     // Currently, don't care about regions information in interpreter tests.
-    auto res = executeQuery(context.context, /*internal=*/true);
-    FmtBuffer fb;
-    res.in->dumpTree(fb);
-    ASSERT_EQ(Poco::trim(expected_string), Poco::trim(fb.toString()));
+    auto executor = executeQuery(context.context, /*internal=*/true);
+    ASSERT_EQ(Poco::trim(expected_string), Poco::trim(executor->dump()));
 }
 
 void ExecutorTest::executeExecutor(
@@ -109,13 +108,15 @@ void ExecutorTest::executeExecutor(
     std::function<::testing::AssertionResult(const ColumnsWithTypeAndName &)> assert_func)
 {
     WRAP_FOR_DIS_ENABLE_PLANNER_BEGIN
-    std::vector<size_t> concurrencies{1, 2, 10};
+    std::vector<size_t> concurrencies{1, 2, 10, getNumberOfPhysicalCPUCores(), std::thread::hardware_concurrency(), std::thread::hardware_concurrency() + 1};
     for (auto concurrency : concurrencies)
     {
+        assert(concurrency > 0);
         std::vector<size_t> block_sizes{1, 2, DEFAULT_BLOCK_SIZE};
         for (auto block_size : block_sizes)
         {
             context.context.setSetting("max_block_size", Field(static_cast<UInt64>(block_size)));
+            auto res = executeStreams(request, concurrency);
             auto test_info_msg = [&]() {
                 const auto & test_info = testing::UnitTest::GetInstance()->current_test_info();
                 assert(test_info);
@@ -128,7 +129,8 @@ void ExecutorTest::executeExecutor(
                     "    enable_planner: {}\n"
                     "    concurrency: {}\n"
                     "    block_size: {}\n"
-                    "    dag_request: \n{}",
+                    "    dag_request: \n{}"
+                    "    result_block: \n{}",
                     test_info->file(),
                     test_info->line(),
                     test_info->test_case_name(),
@@ -136,9 +138,10 @@ void ExecutorTest::executeExecutor(
                     enable_planner,
                     concurrency,
                     block_size,
-                    ExecutorSerializer().serialize(request.get()));
+                    ExecutorSerializer().serialize(request.get()),
+                    getColumnsContent(res));
             };
-            ASSERT_TRUE(assert_func(executeStreams(request, concurrency))) << test_info_msg();
+            ASSERT_TRUE(assert_func(res)) << test_info_msg();
         }
     }
     WRAP_FOR_DIS_ENABLE_PLANNER_END
@@ -147,7 +150,8 @@ void ExecutorTest::executeExecutor(
 void ExecutorTest::executeAndAssertColumnsEqual(const std::shared_ptr<tipb::DAGRequest> & request, const ColumnsWithTypeAndName & expect_columns)
 {
     executeExecutor(request, [&](const ColumnsWithTypeAndName & res) {
-        return columnsEqual(expect_columns, res, /*_restrict=*/false);
+        return columnsEqual(expect_columns, res, /*_restrict=*/false) << "\n  expect_block: \n"
+                                                                      << getColumnsContent(expect_columns);
     });
 }
 
@@ -220,6 +224,11 @@ void ExecutorTest::enablePlanner(bool is_enable)
     context.context.setSetting("enable_planner", is_enable ? "true" : "false");
 }
 
+void ExecutorTest::enablePipeline(bool is_enable)
+{
+    context.context.setSetting("enable_pipeline", is_enable ? "true" : "false");
+}
+
 DB::ColumnsWithTypeAndName ExecutorTest::executeStreams(const std::shared_ptr<tipb::DAGRequest> & request, size_t concurrency)
 {
     DAGContext dag_context(*request, "executor_test", concurrency);
@@ -227,7 +236,12 @@ DB::ColumnsWithTypeAndName ExecutorTest::executeStreams(const std::shared_ptr<ti
     context.context.setMockStorage(context.mockStorage());
     context.context.setDAGContext(&dag_context);
     // Currently, don't care about regions information in tests.
-    return readBlock(executeQuery(context.context, /*internal=*/true).in);
+    auto executor = executeQuery(context.context, /*internal=*/true);
+    Blocks actual_blocks;
+    executor->executeForTest([&actual_blocks](const Block & block) {
+        actual_blocks.push_back(block);
+    });
+    return mergeBlocks(actual_blocks).getColumnsWithTypeAndName();
 }
 
 DB::ColumnsWithTypeAndName ExecutorTest::executeRawQuery(const String & query, size_t concurrency)

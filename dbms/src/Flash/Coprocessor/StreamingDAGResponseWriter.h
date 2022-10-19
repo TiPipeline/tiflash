@@ -20,6 +20,7 @@
 #include <Flash/Coprocessor/ChunkCodec.h>
 #include <Flash/Coprocessor/DAGContext.h>
 #include <Flash/Coprocessor/DAGResponseWriter.h>
+#include <Flash/Mpp/AsyncWriter.h>
 #include <Flash/Mpp/TrackedMppDataPacket.h>
 #include <common/logger_useful.h>
 
@@ -28,6 +29,7 @@ namespace DB
 /// Serializes the stream of blocks and sends them to TiDB/TiSpark with different serialization paths.
 template <class StreamWriterPtr>
 class StreamingDAGResponseWriter : public DAGResponseWriter
+    , public AsyncWriter
 {
 public:
     StreamingDAGResponseWriter(
@@ -39,9 +41,15 @@ public:
     void write(const Block & block) override;
     void finishWrite() override;
 
+    void asyncWrite(Block && block) override;
+    void asyncFinishWrite() override;
+    bool asyncIsReady() override;
+
 private:
     template <bool send_exec_summary_at_last>
     void encodeThenWriteBlocks();
+
+    void asyncEncodeThenWriteBlocks();
 
     Int64 batch_send_min_limit;
     bool should_send_exec_summary_at_last; /// only one stream needs to sending execution summaries at last.
@@ -49,6 +57,10 @@ private:
     std::vector<Block> blocks;
     size_t rows_in_blocks;
     std::unique_ptr<ChunkCodecStream> chunk_codec_stream;
+
+    // async
+    std::optional<TrackedMppDataPacket> not_ready_packet;
+    std::vector<uint16_t> not_ready_partitions;
 };
 
 } // namespace DB

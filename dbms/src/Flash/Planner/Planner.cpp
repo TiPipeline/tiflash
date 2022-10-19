@@ -14,6 +14,7 @@
 
 #include <Flash/Coprocessor/DAGContext.h>
 #include <Flash/Coprocessor/InterpreterUtils.h>
+#include <Flash/Executor/PipelineExecutor.h>
 #include <Flash/Planner/PhysicalPlan.h>
 #include <Flash/Planner/Planner.h>
 #include <Flash/Statistics/traverseExecutors.h>
@@ -38,6 +39,20 @@ BlockIO Planner::execute()
     BlockIO res;
     res.in = pipeline.firstStream();
     return res;
+}
+
+QueryExecutorPtr Planner::pipelineExecute(std::shared_ptr<ProcessListEntry> process_list_entry) const
+{
+    PhysicalPlan physical_plan{context, log->identifier()};
+
+    physical_plan.build(&plan_source.getDAGRequest());
+    physical_plan.outputAndOptimize();
+
+    return std::make_unique<PipelineExecutor>(
+        context,
+        physical_plan.rootNode(),
+        log->identifier(),
+        process_list_entry);
 }
 
 DAGContext & Planner::dagContext() const

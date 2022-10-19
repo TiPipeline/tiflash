@@ -476,7 +476,7 @@ void Join::init(const Block & sample_block, size_t build_concurrency_)
 {
     std::unique_lock lock(rwlock);
     if (unlikely(initialized))
-        throw Exception("Logical error: Join has been initialized", ErrorCodes::LOGICAL_ERROR);
+        return;
     initialized = true;
     setBuildConcurrencyAndInitPool(build_concurrency_);
     /// Choose data structure to use for JOIN.
@@ -738,7 +738,6 @@ void insertFromBlockImpl(
         throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
     }
 }
-} // namespace
 
 void recordFilteredRows(const Block & block, const String & filter_column, ColumnPtr & null_map_holder, ConstNullMapPtr & null_map)
 {
@@ -782,6 +781,7 @@ void recordFilteredRows(const Block & block, const String & filter_column, Colum
 
     null_map = &static_cast<const ColumnUInt8 &>(*null_map_holder).getData();
 }
+} // namespace
 
 bool Join::insertFromBlock(const Block & block)
 {
