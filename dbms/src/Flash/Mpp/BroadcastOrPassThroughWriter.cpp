@@ -138,13 +138,24 @@ void BroadcastOrPassThroughWriter<StreamWriterPtr>::asyncEncodeThenWriteBlocks()
     rows_in_blocks = 0;
 
     assert(!not_ready_packet && not_ready_partitions.empty());
-    for (uint16_t part_id = 0; part_id < writer->getPartitionNum(); ++part_id)
+    if (1 == writer->getPartitionNum())
     {
-        if (!writer->asyncWrite(tracked_packet->getPacket(), part_id))
-            not_ready_partitions.emplace_back(part_id);
+        if (!writer->asyncWrite(std::move(tracked_packet->getPacket()), 0))
+        {
+            not_ready_partitions.emplace_back(0);
+            not_ready_packet = std::move(tracked_packet);
+        } 
     }
-    if (!not_ready_partitions.empty())
-        not_ready_packet = std::move(tracked_packet);
+    else
+    {
+        for (uint16_t part_id = 0; part_id < writer->getPartitionNum(); ++part_id)
+        {
+            if (!writer->asyncWrite(tracked_packet->getPacket(), part_id))
+                not_ready_partitions.emplace_back(part_id);
+        }
+        if (!not_ready_partitions.empty())
+            not_ready_packet = std::move(tracked_packet);
+    }
 }
 
 template <class StreamWriterPtr>
@@ -155,11 +166,15 @@ bool BroadcastOrPassThroughWriter<StreamWriterPtr>::asyncIsReady()
 
     const auto & packet = not_ready_packet->getPacket();
     assert(!not_ready_partitions.empty());
+    size_t non_ready_count = not_ready_partitions.size();
     auto iter = not_ready_partitions.begin();
     while (iter != not_ready_partitions.end())
     {
-        if (writer->asyncWrite(packet, *iter))
+        if (non_ready_count == 1 ? writer->asyncWrite(std::move(packet), *iter) : writer->asyncWrite(packet, *iter))
+        {
+            --non_ready_count;
             iter = not_ready_partitions.erase(iter);
+        }
         else
             ++iter;
     }
