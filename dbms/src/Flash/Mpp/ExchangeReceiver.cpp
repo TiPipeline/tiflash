@@ -529,6 +529,8 @@ void ExchangeReceiverBase<RPCContext>::setUpConnection()
     for (size_t index = 0; index < source_num; ++index)
     {
         auto req = rpc_context->makeRequest(index);
+        if (!req.is_local)
+            only_local = false;
         if (rpc_context->supportAsync(req))
             async_requests.push_back(std::move(req));
         else if (req.is_local && enable_pipeline)
@@ -645,9 +647,6 @@ void ExchangeReceiverBase<RPCContext>::localReadFinish(bool meet_error, const St
 template <typename RPCContext>
 bool ExchangeReceiverBase<RPCContext>::tryReadForLocal(std::shared_ptr<ReceivedMessage> & recv_msg)
 {
-    if (is_local_finished)
-        return false;
-
     try
     {
         TrackedMppDataPacketPtr packet;
@@ -801,8 +800,14 @@ bool ExchangeReceiverBase<RPCContext>::asyncReceive(std::shared_ptr<ReceivedMess
     assert(!recv_msg);
     assert(1 == msg_channels.size());
 
-    if (tryReadForLocal(recv_msg))
-        return true;
+    bool tmp_is_local_finished = is_local_finished.load();
+    if (!tmp_is_local_finished)
+    {
+        if (tryReadForLocal(recv_msg))
+            return true;
+    }
+    if (only_local)
+        return tmp_is_local_finished;
 
     auto try_pop_result = msg_channels[0]->tryPop(recv_msg);
     switch (try_pop_result)

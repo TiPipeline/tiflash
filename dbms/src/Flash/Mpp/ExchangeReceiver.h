@@ -238,6 +238,7 @@ private:
     bool enable_pipeline;
     std::atomic_bool is_local_finished{true};
     LocalExchangePacketReaderPtr local_exchange_reader;
+    bool only_local = true;
 };
 
 class ExchangeReceiver : public ExchangeReceiverBase<GRPCReceiverContext>
