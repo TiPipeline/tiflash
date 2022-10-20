@@ -444,7 +444,7 @@ ExchangeReceiverBase<RPCContext>::ExchangeReceiverBase(
     const String & req_id,
     const String & executor_id,
     uint64_t fine_grained_shuffle_stream_count_,
-    bool enable_pipeline_)
+    bool read_local_tunnel_directly)
     : rpc_context(std::move(rpc_context_))
     , source_num(source_num_)
     , max_streams(max_streams_)
@@ -455,7 +455,6 @@ ExchangeReceiverBase<RPCContext>::ExchangeReceiverBase(
     , exc_log(Logger::get(req_id, executor_id))
     , collected(false)
     , fine_grained_shuffle_stream_count(fine_grained_shuffle_stream_count_)
-    , enable_pipeline(enable_pipeline_)
 {
     try
     {
@@ -471,7 +470,7 @@ ExchangeReceiverBase<RPCContext>::ExchangeReceiverBase(
             msg_channels.push_back(std::make_unique<MPMCQueue<std::shared_ptr<ReceivedMessage>>>(max_buffer_size));
         }
         rpc_context->fillSchema(schema);
-        setUpConnection();
+        setUpConnection(read_local_tunnel_directly);
     }
     catch (...)
     {
@@ -521,7 +520,7 @@ void ExchangeReceiverBase<RPCContext>::close()
 }
 
 template <typename RPCContext>
-void ExchangeReceiverBase<RPCContext>::setUpConnection()
+void ExchangeReceiverBase<RPCContext>::setUpConnection(bool read_local_tunnel_directly)
 {
     mem_tracker = current_memory_tracker ? current_memory_tracker->shared_from_this() : nullptr;
     std::vector<Request> async_requests;
@@ -529,14 +528,13 @@ void ExchangeReceiverBase<RPCContext>::setUpConnection()
     for (size_t index = 0; index < source_num; ++index)
     {
         auto req = rpc_context->makeRequest(index);
-        if (!req.is_local)
-            only_local = false;
+        only_local &= req.is_local;
         if (rpc_context->supportAsync(req))
             async_requests.push_back(std::move(req));
-        else if (req.is_local && enable_pipeline)
+        else if (req.is_local && read_local_tunnel_directly)
         {
             is_local_finished = false;
-            local_exchange_reader = std::static_pointer_cast<LocalExchangePacketReader>(rpc_context->makeReader(req));
+            local_exchange_reader = rpc_context->makeLocalReader(req);
         }
         else
         {
@@ -647,6 +645,7 @@ void ExchangeReceiverBase<RPCContext>::localReadFinish(bool meet_error, const St
 template <typename RPCContext>
 bool ExchangeReceiverBase<RPCContext>::tryReadForLocal(std::shared_ptr<ReceivedMessage> & recv_msg)
 {
+    assert(local_exchange_reader);
     try
     {
         TrackedMppDataPacketPtr packet;

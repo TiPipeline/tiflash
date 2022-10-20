@@ -138,7 +138,7 @@ public:
         const String & req_id,
         const String & executor_id,
         uint64_t fine_grained_shuffle_stream_count,
-        bool enable_pipeline_ = false);
+        bool read_local_tunnel_directly = false);
 
     ~ExchangeReceiverBase();
 
@@ -190,7 +190,7 @@ private:
     void readLoop(const Request & req);
     template <bool enable_fine_grained_shuffle>
     void reactor(const std::vector<Request> & async_requests);
-    void setUpConnection();
+    void setUpConnection(bool read_local_tunnel_directly);
 
     bool setEndState(ExchangeReceiverState new_state);
     String getStatusString();
@@ -235,7 +235,6 @@ private:
     uint64_t fine_grained_shuffle_stream_count;
 
     // for pipeline
-    bool enable_pipeline;
     std::atomic_bool is_local_finished{true};
     LocalExchangePacketReaderPtr local_exchange_reader;
     bool only_local = true;

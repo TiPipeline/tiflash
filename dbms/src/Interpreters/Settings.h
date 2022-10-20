@@ -372,7 +372,8 @@ struct Settings
                                                                                                                                                                                                                                         \
     M(SettingBool, enable_planner, true, "Enable planner")                                                                                                                                                                              \
     M(SettingBool, enable_pipeline, true, "Enable pipeline")                                                                                                                                                                            \
-    M(SettingDouble, event_loop_num_ratio, 2.0, "")
+    M(SettingDouble, event_loop_num_ratio, 2.0, "")                                                                                                                                                                                     \
+    M(SettingBool, read_local_tunnel_directly, true, "")
 // clang-format on
 #define DECLARE(TYPE, NAME, DEFAULT, DESCRIPTION) TYPE NAME{DEFAULT};
 

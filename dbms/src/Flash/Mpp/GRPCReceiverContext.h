@@ -54,13 +54,10 @@ using AsyncExchangePacketReaderPtr = std::shared_ptr<AsyncExchangePacketReader>;
 struct LocalExchangePacketReader : public ExchangePacketReader
 {
     LocalTunnelSenderPtr local_tunnel_sender;
-    std::atomic_bool is_finished{false};
 
     explicit LocalExchangePacketReader(const LocalTunnelSenderPtr & local_tunnel_sender_)
         : local_tunnel_sender(local_tunnel_sender_)
-    {
-        RUNTIME_CHECK(local_tunnel_sender);
-    }
+    {}
 
     /// put the implementation of dtor in .cpp so we don't need to put the specialization of
     /// pingcap::kv::RpcCall<mpp::EstablishMPPConnectionRequest> in header file.
@@ -107,6 +104,8 @@ public:
     bool supportAsync(const ExchangeRecvRequest & request) const;
 
     ExchangePacketReaderPtr makeReader(const ExchangeRecvRequest & request) const;
+
+    LocalExchangePacketReaderPtr makeLocalReader(const ExchangeRecvRequest & request) const;
 
     void makeAsyncReader(
         const ExchangeRecvRequest & request,
