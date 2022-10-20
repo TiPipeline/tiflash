@@ -113,6 +113,8 @@ public:
       */
     void init(const Block & sample_block, size_t build_concurrency_ = 1);
 
+    void reserve(size_t rows, size_t index);
+
     bool insertFromBlock(const Block & block);
 
     void insertFromBlock(const Block & block, size_t stream_index);

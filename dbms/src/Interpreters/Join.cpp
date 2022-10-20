@@ -781,7 +781,58 @@ void recordFilteredRows(const Block & block, const String & filter_column, Colum
 
     null_map = &static_cast<const ColumnUInt8 &>(*null_map_holder).getData();
 }
+
+template <typename Maps>
+void reserveImpl(Maps & maps, Join::Type type, size_t rows, size_t index)
+{
+    switch (type)
+    {
+    case Join::Type::EMPTY:
+        break;
+    case Join::Type::CROSS:
+        break;
+
+#define M(TYPE)                                                            \
+    case Join::Type::TYPE:                                                 \
+    {                                                                      \
+        assert(index < maps.TYPE->getSegmentSize());                       \
+        auto estimateRowsPerSegment = rows * 1.5;                          \
+        maps.TYPE->getSegmentTable(index).reserve(estimateRowsPerSegment); \
+        break;                                                             \
+    }
+        APPLY_FOR_JOIN_VARIANTS(M)
+#undef M
+
+    default:
+        throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+    }
+}
 } // namespace
+
+void Join::reserve(size_t rows, size_t index)
+{
+    std::shared_lock lock(rwlock);
+    if (unlikely(!initialized))
+        throw Exception("Logical error: Join was not initialized", ErrorCodes::LOGICAL_ERROR);
+    if (isCrossJoin(kind))
+    {
+        // do nothing
+    }
+    else if (!getFullness(kind))
+    {
+        if (strictness == ASTTableJoin::Strictness::Any)
+            reserveImpl(maps_any, type, rows, index);
+        else
+            reserveImpl(maps_all, type, rows, index);
+    }
+    else
+    {
+        if (strictness == ASTTableJoin::Strictness::Any)
+            reserveImpl(maps_any_full, type, rows, index);
+        else
+            reserveImpl(maps_all_full, type, rows, index);
+    }
+}
 
 bool Join::insertFromBlock(const Block & block)
 {

@@ -105,6 +105,7 @@ struct MockStreamWriter
     void write(tipb::SelectResponse & response) { checker(response, 0); }
     uint16_t getPartitionNum() const { return 1; }
     bool asyncWrite(const mpp::MPPDataPacket &, int16_t) { throw Exception("unsupport"); }
+    bool asyncWrite(mpp::MPPDataPacket &&, int16_t) { throw Exception("unsupport"); }
 
 private:
     MockStreamWriterChecker checker;

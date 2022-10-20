@@ -60,6 +60,8 @@ public:
 
     bool asyncWrite(const mpp::MPPDataPacket & packet, int16_t partition_id);
 
+    bool asyncWrite(mpp::MPPDataPacket && packet, int16_t partition_id);
+
     TunnelPtr getTunnelByReceiverTaskId(const MPPTaskId & id);
 
     uint16_t getPartitionNum() const { return tunnels.size(); }
