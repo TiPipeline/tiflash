@@ -54,7 +54,7 @@ private:
     std::unique_ptr<ChunkCodecStream> chunk_codec_stream;
 
     // async
-    std::optional<TrackedMppDataPacket> not_ready_packet;
+    std::unique_ptr<TrackedMppDataPacket> not_ready_packet;
     std::vector<uint16_t> not_ready_partitions;
 };
 

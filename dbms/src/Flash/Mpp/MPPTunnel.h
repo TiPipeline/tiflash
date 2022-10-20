@@ -74,6 +74,11 @@ public:
     {
     }
 
+    virtual MPMCQueueResult nativePush(mpp::MPPDataPacket && data)
+    {
+        return send_queue.tryEmplaceSharedPtr<TrackedMppDataPacket>(std::move(data), getMemoryTracker());
+    }
+
     virtual MPMCQueueResult nativePush(const mpp::MPPDataPacket & data)
     {
         return send_queue.tryEmplaceSharedPtr<TrackedMppDataPacket>(data, getMemoryTracker());
@@ -180,6 +185,11 @@ public:
         : TunnelSender(0, memoryTracker, log_, tunnel_id_)
         , queue(queue_size, func)
     {}
+
+    MPMCQueueResult nativePush(mpp::MPPDataPacket && data) override
+    {
+        return queue.nativePush<TrackedMppDataPacket>(std::move(data), getMemoryTracker());
+    }
 
     MPMCQueueResult nativePush(const mpp::MPPDataPacket & data) override
     {
@@ -318,6 +328,7 @@ public:
     AsyncTunnelSenderPtr getAsyncTunnelSender() { return async_tunnel_sender; }
     LocalTunnelSenderPtr getLocalTunnelSender() { return local_tunnel_sender; }
 
+    bool asyncWrite(mpp::MPPDataPacket && data);
     bool asyncWrite(const mpp::MPPDataPacket & data);
 
 private:

@@ -113,6 +113,11 @@ struct TrackedMppDataPacket
         packet = data;
     }
 
+    explicit TrackedMppDataPacket(mpp::MPPDataPacket && data, MemoryTracker * memory_tracker)
+        : mem_tracker_wrapper(estimateAllocatedSize(data), memory_tracker)
+        , packet(std::move(data))
+    {}
+
     explicit TrackedMppDataPacket()
         : mem_tracker_wrapper(current_memory_tracker)
     {}

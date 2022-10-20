@@ -125,35 +125,35 @@ void BroadcastOrPassThroughWriter<StreamWriterPtr>::asyncEncodeThenWriteBlocks()
 {
     if (blocks.empty())
         return;
-    TrackedMppDataPacket tracked_packet(current_memory_tracker);
+    auto tracked_packet = std::make_unique<TrackedMppDataPacket>();
     while (!blocks.empty())
     {
         const auto & block = blocks.back();
         chunk_codec_stream->encode(block, 0, block.rows());
         blocks.pop_back();
-        tracked_packet.addChunk(chunk_codec_stream->getString());
+        tracked_packet->addChunk(chunk_codec_stream->getString());
         chunk_codec_stream->clear();
     }
     assert(blocks.empty());
     rows_in_blocks = 0;
 
-    assert(!not_ready_packet.has_value() && not_ready_partitions.empty());
+    assert(!not_ready_packet && not_ready_partitions.empty());
     for (uint16_t part_id = 0; part_id < writer->getPartitionNum(); ++part_id)
     {
-        if (!writer->asyncWrite(tracked_packet.getPacket(), part_id))
+        if (!writer->asyncWrite(tracked_packet->getPacket(), part_id))
             not_ready_partitions.emplace_back(part_id);
     }
     if (!not_ready_partitions.empty())
-        not_ready_packet.emplace(std::move(tracked_packet));
+        not_ready_packet = std::move(tracked_packet);
 }
 
 template <class StreamWriterPtr>
 bool BroadcastOrPassThroughWriter<StreamWriterPtr>::asyncIsReady()
 {
-    if (!not_ready_packet.has_value())
+    if (!not_ready_packet)
         return true;
 
-    const auto & packet = not_ready_packet.value().getPacket();
+    const auto & packet = not_ready_packet->getPacket();
     assert(!not_ready_partitions.empty());
     auto iter = not_ready_partitions.begin();
     while (iter != not_ready_partitions.end())

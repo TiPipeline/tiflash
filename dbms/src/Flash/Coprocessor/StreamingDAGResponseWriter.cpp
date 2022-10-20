@@ -187,7 +187,7 @@ void StreamingDAGResponseWriter<StreamWriterPtr>::asyncEncodeThenWriteBlocks()
     if (blocks.empty())
         return;
 
-    TrackedMppDataPacket tracked_packet;
+    auto tracked_packet = std::make_unique<TrackedMppDataPacket>();
     {
         TrackedSelectResp response;
         response.setEncodeType(encode_type);
@@ -236,44 +236,29 @@ void StreamingDAGResponseWriter<StreamWriterPtr>::asyncEncodeThenWriteBlocks()
         assert(blocks.empty());
         rows_in_blocks = 0;
 
-        tracked_packet.serializeByResponse(response.getResponse());
+        tracked_packet->serializeByResponse(response.getResponse());
     }
 
-    assert(!not_ready_packet.has_value() && not_ready_partitions.empty());
-    for (uint16_t part_id = 0; part_id < writer->getPartitionNum(); ++part_id)
-    {
-        if (!writer->asyncWrite(tracked_packet.getPacket(), part_id))
-            not_ready_partitions.emplace_back(part_id);
-    }
-    if (!not_ready_partitions.empty())
-        not_ready_packet.emplace(std::move(tracked_packet));
+    assert(!not_ready_packet);
+    assert(1 == writer->getPartitionNum());
+    if (!writer->asyncWrite(std::move(tracked_packet->getPacket()), 0))
+        not_ready_packet = std::move(tracked_packet);
 }
 
 template <class StreamWriterPtr>
 bool StreamingDAGResponseWriter<StreamWriterPtr>::asyncIsReady()
 {
-    if (!not_ready_packet.has_value())
+    if (!not_ready_packet)
         return true;
 
-    const auto & packet = not_ready_packet.value().getPacket();
-    assert(!not_ready_partitions.empty());
-    auto iter = not_ready_partitions.begin();
-    while (iter != not_ready_partitions.end())
-    {
-        if (writer->asyncWrite(packet, *iter))
-            iter = not_ready_partitions.erase(iter);
-        else
-            ++iter;
-    }
-    if (not_ready_partitions.empty())
+    assert(1 == writer->getPartitionNum());
+    if (writer->asyncWrite(std::move(not_ready_packet->getPacket()), 0))
     {
         not_ready_packet.reset();
         return true;
     }
     else
-    {
         return false;
-    }
 }
 
 template class StreamingDAGResponseWriter<StreamWriterPtr>;

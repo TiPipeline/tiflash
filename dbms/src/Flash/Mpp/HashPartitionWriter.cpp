@@ -166,7 +166,10 @@ void HashPartitionWriter<StreamWriterPtr>::asyncPartitionAndEncodeThenWriteBlock
     if (blocks.empty())
         return;
 
-    std::vector<TrackedMppDataPacket> tracked_packets(partition_num);
+    std::vector<std::unique_ptr<TrackedMppDataPacket>> tracked_packets;
+    tracked_packets.reserve(partition_num);
+    for (size_t i = 0; i < partition_num; ++i)
+        tracked_packets.emplace_back(std::make_unique<TrackedMppDataPacket>());
 
     assert(rows_in_blocks > 0);
     HashBaseWriterHelper::materializeBlocks(blocks);
@@ -187,7 +190,7 @@ void HashPartitionWriter<StreamWriterPtr>::asyncPartitionAndEncodeThenWriteBlock
             if (dest_block_rows > 0)
             {
                 chunk_codec_stream->encode(dest_block, 0, dest_block_rows);
-                tracked_packets[part_id].addChunk(chunk_codec_stream->getString());
+                tracked_packets[part_id]->addChunk(chunk_codec_stream->getString());
                 chunk_codec_stream->clear();
             }
         }
@@ -198,10 +201,10 @@ void HashPartitionWriter<StreamWriterPtr>::asyncPartitionAndEncodeThenWriteBlock
     assert(not_ready_packets.empty());
     for (uint16_t part_id = 0; part_id < partition_num; ++part_id)
     {
-        auto & packet = tracked_packets[part_id].getPacket();
+        auto & packet = tracked_packets[part_id]->getPacket();
         if (packet.chunks_size() > 0)
         {
-            if (!writer->asyncWrite(packet, part_id))
+            if (!writer->asyncWrite(std::move(packet), part_id))
                 not_ready_packets.emplace_back(part_id, std::move(tracked_packets[part_id]));
         }
     }
@@ -216,7 +219,7 @@ bool HashPartitionWriter<StreamWriterPtr>::asyncIsReady()
     auto iter = not_ready_packets.begin();
     while (iter != not_ready_packets.end())
     {
-        if (writer->asyncWrite(iter->second.getPacket(), iter->first))
+        if (writer->asyncWrite(std::move(iter->second->getPacket()), iter->first))
             iter = not_ready_packets.erase(iter);
         else
             ++iter;
