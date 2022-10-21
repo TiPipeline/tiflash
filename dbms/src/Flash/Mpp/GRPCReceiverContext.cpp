@@ -227,12 +227,13 @@ LocalExchangePacketReaderPtr GRPCReceiverContext::makeLocalReader(const Exchange
 {
     RUNTIME_CHECK(request.is_local);
     auto [tunnel, status] = establishMPPConnectionLocal(request.req.get(), task_manager);
-    assert(tunnel);
-    auto local_tunnel_sender = tunnel->getLocalTunnelSender();
-    if (!status.ok() || !local_tunnel_sender)
+    if (!status.ok())
     {
         throw Exception("Exchange receiver meet error : " + status.error_message());
     }
+    RUNTIME_CHECK(tunnel);
+    auto local_tunnel_sender = tunnel->getLocalTunnelSender();
+    RUNTIME_CHECK(local_tunnel_sender);
     return std::make_shared<LocalExchangePacketReader>(local_tunnel_sender);
 }
 
