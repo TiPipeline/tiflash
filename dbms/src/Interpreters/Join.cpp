@@ -793,15 +793,15 @@ void reserveImpl(Maps & maps, Join::Type type, size_t rows, size_t index)
     case Join::Type::CROSS:
         break;
 
-#define M(TYPE)                                                                    \
-    case Join::Type::TYPE:                                                         \
-    {                                                                              \
-        auto estimateRowsPerSegment = rows * 0.375;                                 \
-        maps.TYPE->getSegmentTable(4 * index).reserve(estimateRowsPerSegment);     \
-        maps.TYPE->getSegmentTable(4 * index + 1).reserve(estimateRowsPerSegment); \
-        maps.TYPE->getSegmentTable(4 * index + 2).reserve(estimateRowsPerSegment); \
-        maps.TYPE->getSegmentTable(4 * index + 3).reserve(estimateRowsPerSegment); \
-        break;                                                                     \
+#define M(TYPE)                                                                        \
+    case Join::Type::TYPE:                                                             \
+    {                                                                                  \
+        auto estimateRowsPerSegment = rows * 1.5 / 4;                                  \
+        for (size_t i = 0; i < 4; ++i)                                                 \
+        {                                                                              \
+            maps.TYPE->getSegmentTable(4 * index + i).reserve(estimateRowsPerSegment); \
+        }                                                                              \
+        break;                                                                         \
     }
         APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
