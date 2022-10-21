@@ -229,19 +229,7 @@ public:
     TrackedMppDataPacketPtr readForLocal();
     bool tryReadForLocal(TrackedMppDataPacketPtr & res);
 
-    MPMCQueueResult nativePush(const TrackedMppDataPacketPtr & data) override
-    {
-        if (packet_count.fetch_add(1) >= send_queue_size)
-        {
-            --packet_count;
-            return MPMCQueueResult::FULL;
-        }
-
-        auto res = TunnelSender::nativePush(data);
-        if (res == MPMCQueueResult::OK)
-            ++packet_count;
-        return res;
-    }
+    MPMCQueueResult nativePush(const TrackedMppDataPacketPtr & data) override;
 
     bool finish() override
     {

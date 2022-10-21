@@ -452,12 +452,29 @@ bool LocalTunnelSender::tryReadForLocal(TrackedMppDataPacketPtr & res)
         return true;
     }
     case MPMCQueueResult::EMPTY:
+    {
+        ++packet_count;
         return false;
+    }
     default:
     {
         consumerFinish("");
         return true;
     }
     }
+}
+
+MPMCQueueResult LocalTunnelSender::nativePush(const TrackedMppDataPacketPtr & data)
+{
+    if (packet_count.fetch_add(1) >= send_queue_size)
+    {
+        --packet_count;
+        return MPMCQueueResult::FULL;
+    }
+
+    auto res = TunnelSender::nativePush(data);
+    if (res != MPMCQueueResult::OK)
+        --packet_count;
+    return res;
 }
 } // namespace DB
