@@ -166,7 +166,7 @@ void HashPartitionWriter<StreamWriterPtr>::asyncPartitionAndEncodeThenWriteBlock
     if (blocks.empty())
         return;
 
-    std::vector<std::unique_ptr<TrackedMppDataPacket>> tracked_packets;
+    std::vector<TrackedMppDataPacketPtr> tracked_packets;
     tracked_packets.reserve(partition_num);
     for (size_t i = 0; i < partition_num; ++i)
         tracked_packets.emplace_back(std::make_unique<TrackedMppDataPacket>());
@@ -201,11 +201,11 @@ void HashPartitionWriter<StreamWriterPtr>::asyncPartitionAndEncodeThenWriteBlock
     assert(not_ready_packets.empty());
     for (uint16_t part_id = 0; part_id < partition_num; ++part_id)
     {
-        auto & packet = tracked_packets[part_id]->getPacket();
-        if (packet.chunks_size() > 0)
+        auto & packet = tracked_packets[part_id];
+        if (packet->getPacket().chunks_size() > 0)
         {
-            if (!writer->asyncWrite(std::move(packet), part_id))
-                not_ready_packets.emplace_back(part_id, std::move(tracked_packets[part_id]));
+            if (!writer->asyncWrite(packet, part_id))
+                not_ready_packets.emplace_back(part_id, std::move(packet));
         }
     }
 }
@@ -219,7 +219,7 @@ bool HashPartitionWriter<StreamWriterPtr>::asyncIsReady()
     auto iter = not_ready_packets.begin();
     while (iter != not_ready_packets.end())
     {
-        if (writer->asyncWrite(std::move(iter->second->getPacket()), iter->first))
+        if (writer->asyncWrite(iter->second, iter->first))
             iter = not_ready_packets.erase(iter);
         else
             ++iter;

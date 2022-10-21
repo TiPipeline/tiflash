@@ -27,6 +27,9 @@
 
 namespace DB
 {
+struct TrackedMppDataPacket;
+using TrackedMppDataPacketPtr = std::shared_ptr<TrackedMppDataPacket>;
+
 namespace tests
 {
 class TestStreamingWriter : public testing::Test
@@ -104,8 +107,7 @@ struct MockStreamWriter
     void write(tipb::SelectResponse & response, uint16_t part_id) { checker(response, part_id); }
     void write(tipb::SelectResponse & response) { checker(response, 0); }
     uint16_t getPartitionNum() const { return 1; }
-    bool asyncWrite(const mpp::MPPDataPacket &, int16_t) { throw Exception("unsupport"); }
-    bool asyncWrite(mpp::MPPDataPacket &&, int16_t) { throw Exception("unsupport"); }
+    bool asyncWrite(const TrackedMppDataPacketPtr &, int16_t) { throw Exception("unsupport"); }
 
 private:
     MockStreamWriterChecker checker;

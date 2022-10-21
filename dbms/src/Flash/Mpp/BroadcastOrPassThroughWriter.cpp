@@ -125,7 +125,7 @@ void BroadcastOrPassThroughWriter<StreamWriterPtr>::asyncEncodeThenWriteBlocks()
 {
     if (blocks.empty())
         return;
-    auto tracked_packet = std::make_unique<TrackedMppDataPacket>();
+    auto tracked_packet = std::make_shared<TrackedMppDataPacket>();
     while (!blocks.empty())
     {
         const auto & block = blocks.back();
@@ -139,17 +139,10 @@ void BroadcastOrPassThroughWriter<StreamWriterPtr>::asyncEncodeThenWriteBlocks()
 
     assert(!not_ready_packet && not_ready_partitions.empty());
     assert(writer->getPartitionNum() > 0);
-    size_t last_part_id = writer->getPartitionNum() - 1;
-    for (uint16_t part_id = 0; part_id < last_part_id; ++part_id)
+    for (uint16_t part_id = 0; part_id < writer->getPartitionNum(); ++part_id)
     {
-        if (!writer->asyncWrite(tracked_packet->getPacket(), part_id))
+        if (!writer->asyncWrite(tracked_packet, part_id))
             not_ready_partitions.emplace_back(part_id);
-    }
-    if (not_ready_partitions.empty()
-        ? !writer->asyncWrite(std::move(tracked_packet->getPacket()), last_part_id)
-        : !writer->asyncWrite(tracked_packet->getPacket(), last_part_id))
-    {
-        not_ready_partitions.emplace_back(last_part_id);
     }
     if (!not_ready_partitions.empty())
         not_ready_packet = std::move(tracked_packet);
@@ -161,17 +154,12 @@ bool BroadcastOrPassThroughWriter<StreamWriterPtr>::asyncIsReady()
     if (!not_ready_packet)
         return true;
 
-    const auto & packet = not_ready_packet->getPacket();
     assert(!not_ready_partitions.empty());
-    size_t non_ready_count = not_ready_partitions.size();
     auto iter = not_ready_partitions.begin();
     while (iter != not_ready_partitions.end())
     {
-        if (non_ready_count == 1 ? writer->asyncWrite(std::move(packet), *iter) : writer->asyncWrite(packet, *iter))
-        {
-            --non_ready_count;
+        if (writer->asyncWrite(not_ready_packet, *iter))
             iter = not_ready_partitions.erase(iter);
-        }
         else
             ++iter;
     }

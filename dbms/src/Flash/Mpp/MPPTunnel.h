@@ -75,14 +75,10 @@ public:
     {
     }
 
-    virtual MPMCQueueResult nativePush(mpp::MPPDataPacket && data)
+    virtual MPMCQueueResult nativePush(const TrackedMppDataPacketPtr & data)
     {
-        return send_queue.tryEmplaceSharedPtr<TrackedMppDataPacket>(std::move(data), getMemoryTracker());
-    }
-
-    virtual MPMCQueueResult nativePush(const mpp::MPPDataPacket & data)
-    {
-        return send_queue.tryEmplaceSharedPtr<TrackedMppDataPacket>(data, getMemoryTracker());
+        data->switchMemTracker(getMemoryTracker());
+        return send_queue.tryPush(data);
     }
 
     virtual bool push(const mpp::MPPDataPacket & data)
@@ -188,14 +184,10 @@ public:
         , queue(queue_size, func)
     {}
 
-    MPMCQueueResult nativePush(mpp::MPPDataPacket && data) override
+    MPMCQueueResult nativePush(const TrackedMppDataPacketPtr & data) override
     {
-        return queue.nativePush<TrackedMppDataPacket>(std::move(data), getMemoryTracker());
-    }
-
-    MPMCQueueResult nativePush(const mpp::MPPDataPacket & data) override
-    {
-        return queue.nativePush<TrackedMppDataPacket>(data, getMemoryTracker());
+        data->switchMemTracker(getMemoryTracker());
+        return queue.tryPush(data);
     }
 
     bool push(const mpp::MPPDataPacket & data) override
@@ -237,21 +229,7 @@ public:
     TrackedMppDataPacketPtr readForLocal();
     bool tryReadForLocal(TrackedMppDataPacketPtr & res);
 
-    MPMCQueueResult nativePush(mpp::MPPDataPacket && data) override
-    {
-        if (packet_count.fetch_add(1) >= send_queue_size)
-        {
-            --packet_count;
-            return MPMCQueueResult::FULL;
-        }
-
-        auto res = TunnelSender::nativePush(std::move(data));
-        if (res == MPMCQueueResult::OK)
-            ++packet_count;
-        return res;
-    }
-
-    MPMCQueueResult nativePush(const mpp::MPPDataPacket & data) override
+    MPMCQueueResult nativePush(const TrackedMppDataPacketPtr & data) override
     {
         if (packet_count.fetch_add(1) >= send_queue_size)
         {
@@ -371,8 +349,7 @@ public:
     AsyncTunnelSenderPtr getAsyncTunnelSender() { return async_tunnel_sender; }
     LocalTunnelSenderPtr getLocalTunnelSender() { return local_tunnel_sender; }
 
-    bool asyncWrite(mpp::MPPDataPacket && data);
-    bool asyncWrite(const mpp::MPPDataPacket & data);
+    bool asyncWrite(const TrackedMppDataPacketPtr & data);
 
 private:
     friend class tests::TestMPPTunnel;

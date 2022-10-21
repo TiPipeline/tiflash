@@ -187,7 +187,7 @@ void StreamingDAGResponseWriter<StreamWriterPtr>::asyncEncodeThenWriteBlocks()
     if (blocks.empty())
         return;
 
-    auto tracked_packet = std::make_unique<TrackedMppDataPacket>();
+    auto tracked_packet = std::make_shared<TrackedMppDataPacket>();
     {
         TrackedSelectResp response;
         response.setEncodeType(encode_type);
@@ -241,7 +241,7 @@ void StreamingDAGResponseWriter<StreamWriterPtr>::asyncEncodeThenWriteBlocks()
 
     assert(!not_ready_packet);
     assert(1 == writer->getPartitionNum());
-    if (!writer->asyncWrite(std::move(tracked_packet->getPacket()), 0))
+    if (!writer->asyncWrite(tracked_packet, 0))
         not_ready_packet = std::move(tracked_packet);
 }
 
@@ -252,7 +252,7 @@ bool StreamingDAGResponseWriter<StreamWriterPtr>::asyncIsReady()
         return true;
 
     assert(1 == writer->getPartitionNum());
-    if (writer->asyncWrite(std::move(not_ready_packet->getPacket()), 0))
+    if (writer->asyncWrite(not_ready_packet, 0))
     {
         not_ready_packet.reset();
         return true;

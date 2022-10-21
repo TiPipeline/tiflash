@@ -107,15 +107,9 @@ void MPPTunnelSetBase<Tunnel>::write(mpp::MPPDataPacket & packet, int16_t partit
 }
 
 template <typename Tunnel>
-bool MPPTunnelSetBase<Tunnel>::asyncWrite(const mpp::MPPDataPacket & packet, int16_t partition_id)
+bool MPPTunnelSetBase<Tunnel>::asyncWrite(const TrackedMppDataPacketPtr & packet, int16_t partition_id)
 {
     return tunnels[partition_id]->asyncWrite(packet);
-}
-
-template <typename Tunnel>
-bool MPPTunnelSetBase<Tunnel>::asyncWrite(mpp::MPPDataPacket && packet, int16_t partition_id)
-{
-    return tunnels[partition_id]->asyncWrite(std::move(packet));
 }
 
 template <typename Tunnel>

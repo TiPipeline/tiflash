@@ -34,6 +34,9 @@ class MPPDataPacket;
 
 namespace DB
 {
+struct TrackedMppDataPacket;
+using TrackedMppDataPacketPtr = std::shared_ptr<TrackedMppDataPacket>;
+
 struct StreamWriter
 {
     ::grpc::ServerWriter<::coprocessor::BatchResponse> * writer;
@@ -61,8 +64,7 @@ struct StreamWriter
     }
     // a helper function
     uint16_t getPartitionNum() { return 0; }
-    bool asyncWrite(const mpp::MPPDataPacket &, int16_t) { throw Exception("Unsupported"); }
-    bool asyncWrite(mpp::MPPDataPacket &&, int16_t) { throw Exception("Unsupported"); }
+    bool asyncWrite(const TrackedMppDataPacketPtr &, int16_t) { throw Exception("Unsupported"); }
 };
 
 using StreamWriterPtr = std::shared_ptr<StreamWriter>;

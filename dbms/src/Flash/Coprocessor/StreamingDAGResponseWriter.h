@@ -59,7 +59,7 @@ private:
     std::unique_ptr<ChunkCodecStream> chunk_codec_stream;
 
     // async
-    std::unique_ptr<TrackedMppDataPacket> not_ready_packet;
+    TrackedMppDataPacketPtr not_ready_packet;
 };
 
 } // namespace DB

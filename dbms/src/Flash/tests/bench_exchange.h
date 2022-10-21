@@ -168,11 +168,6 @@ struct MockWriter : public PacketWriter
         queue->finish();
     }
 
-    bool asyncWrite(const Packet & packet)
-    {
-        throw Exception("unsupport");
-    }
-
     PacketQueuePtr queue;
 };
 

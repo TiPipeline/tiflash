@@ -131,37 +131,7 @@ void MPPTunnel::close(const String & reason, bool wait_sender_finish)
         waitForSenderFinish(false);
 }
 
-bool MPPTunnel::asyncWrite(mpp::MPPDataPacket && data)
-{
-    LOG_TRACE(log, "ready to write");
-    {
-        std::unique_lock lk(mu);
-        // waitUntilConnectedOrFinished(lk);
-        // if (tunnel_sender == nullptr)
-        //     throw Exception(fmt::format("write to tunnel which is already closed."));
-        if (status == TunnelStatus::Unconnected)
-            return false;
-    }
-
-    auto res = tunnel_sender->nativePush(std::move(data));
-    switch (res)
-    {
-    case MPMCQueueResult::OK:
-    {
-        connection_profile_info.bytes += data.ByteSizeLong();
-        connection_profile_info.packets += 1;
-        return true;
-    }
-    case MPMCQueueResult::FULL:
-        return false;
-    case MPMCQueueResult::FINISHED: // consumer has finished, for limit/topn, wait kill from tidb.
-        return false;
-    default:
-        throw Exception(fmt::format("write to tunnel which is already closed,{}", tunnel_sender->isConsumerFinished() ? tunnel_sender->getConsumerFinishMsg() : ""));
-    }
-}
-
-bool MPPTunnel::asyncWrite(const mpp::MPPDataPacket & data)
+bool MPPTunnel::asyncWrite(const TrackedMppDataPacketPtr & data)
 {
     LOG_TRACE(log, "ready to write");
     {
@@ -178,7 +148,7 @@ bool MPPTunnel::asyncWrite(const mpp::MPPDataPacket & data)
     {
     case MPMCQueueResult::OK:
     {
-        connection_profile_info.bytes += data.ByteSizeLong();
+        connection_profile_info.bytes += data->getPacket().ByteSizeLong();
         connection_profile_info.packets += 1;
         return true;
     }
