@@ -37,7 +37,8 @@ bool PipelineTask::tryToCpuMode()
     }
     try
     {
-        MemoryTrackerSetter setter(true, getMemTracker());
+        // MemoryTrackerSetter setter(true, getMemTracker());
+        current_memory_tracker = getMemTracker();
         if (transforms->isIOReady())
         {
             if (status == PipelineTaskStatus::io_finishing)

@@ -456,6 +456,12 @@ std::shared_ptr<DB::TrackedMppDataPacket> LocalTunnelSender::readForLocal()
 bool LocalTunnelSender::tryReadForLocal(TrackedMppDataPacketPtr & res)
 {
     assert(!res);
+    if (packet_count.fetch_sub(1) <= 0)
+    {
+        ++packet_count;
+        return false;
+    }
+
     auto result = send_queue.tryPop(res);
     switch (result)
     {

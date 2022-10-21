@@ -69,6 +69,7 @@ public:
     TunnelSender(size_t queue_size, MemoryTrackerPtr & memory_tracker_, const LoggerPtr & log_, const String & tunnel_id_)
         : memory_tracker(memory_tracker_)
         , send_queue(MPMCQueue<TrackedMppDataPacketPtr>(queue_size))
+        , send_queue_size(queue_size)
         , log(log_)
         , tunnel_id(tunnel_id_)
     {
@@ -151,6 +152,7 @@ protected:
     };
     MemoryTrackerPtr memory_tracker;
     MPMCQueue<TrackedMppDataPacketPtr> send_queue;
+    int32_t send_queue_size;
     ConsumerState consumer_state;
     const LoggerPtr log;
     const String tunnel_id;
@@ -235,8 +237,49 @@ public:
     TrackedMppDataPacketPtr readForLocal();
     bool tryReadForLocal(TrackedMppDataPacketPtr & res);
 
+    MPMCQueueResult nativePush(mpp::MPPDataPacket && data) override
+    {
+        if (packet_count.fetch_add(1) >= send_queue_size)
+        {
+            --packet_count;
+            return MPMCQueueResult::FULL;
+        }
+
+        auto res = TunnelSender::nativePush(std::move(data));
+        if (res == MPMCQueueResult::OK)
+            ++packet_count;
+        return res;
+    }
+
+    MPMCQueueResult nativePush(const mpp::MPPDataPacket & data) override
+    {
+        if (packet_count.fetch_add(1) >= send_queue_size)
+        {
+            --packet_count;
+            return MPMCQueueResult::FULL;
+        }
+
+        auto res = TunnelSender::nativePush(data);
+        if (res == MPMCQueueResult::OK)
+            ++packet_count;
+        return res;
+    }
+
+    bool finish() override
+    {
+        packet_count = 10000000;
+        return TunnelSender::finish();
+    }
+
+    void cancelWith(const String & reason) override
+    {
+        packet_count = 10000000;
+        TunnelSender::cancelWith(reason);
+    }
+
 private:
     std::atomic_bool cancel_reason_sent = false;
+    std::atomic_int32_t packet_count{0};
 };
 
 using TunnelSenderPtr = std::shared_ptr<TunnelSender>;
