@@ -96,7 +96,6 @@ void DAGScheduler::handlePipelineCancel(const PipelineEvent & event)
     assert(event.type == PipelineEventType::cancel);
     event_queue->cancel();
     cancelPipelines(event.is_kill);
-    pipeline_signals.clear();
 }
 
 void DAGScheduler::cancelPipelines(bool is_kill)
@@ -109,8 +108,7 @@ String DAGScheduler::handlePipelineFail(const PipelineEvent & event)
 {
     assert(event.type == PipelineEventType::fail);
     event_queue->cancel();
-    cancelPipelines(false);
-    pipeline_signals.clear();
+    cancelPipelines(true);
     return event.err_msg;
 }
 
@@ -118,7 +116,7 @@ void DAGScheduler::handlePipelineFinish(const PipelineEvent & event [[maybe_unus
 {
     assert(event.type == PipelineEventType::finish);
     event_queue->finish();
-    pipeline_signals.clear();
+    cancelPipelines(true);
 }
 
 PipelinePtr DAGScheduler::genPipeline(PhysicalPlanNodePtr plan_node, PipelineIDGenerator & id_generator)

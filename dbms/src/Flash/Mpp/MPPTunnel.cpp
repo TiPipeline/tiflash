@@ -399,6 +399,11 @@ void SyncTunnelSender::startSendThread(PacketWriter * writer)
     });
 }
 
+LocalTunnelSender::LocalTunnelSender(size_t queue_size, MemoryTrackerPtr & memory_tracker_, const LoggerPtr & log_, const String & tunnel_id_)
+    : TunnelSender(queue_size, memory_tracker_, log_, tunnel_id_)
+    , local_queue(queue_size)
+{}
+
 std::shared_ptr<DB::TrackedMppDataPacket> LocalTunnelSender::readForLocal()
 {
     TrackedMppDataPacketPtr res;
@@ -426,13 +431,7 @@ std::shared_ptr<DB::TrackedMppDataPacket> LocalTunnelSender::readForLocal()
 bool LocalTunnelSender::tryReadForLocal(TrackedMppDataPacketPtr & res)
 {
     assert(!res);
-    if (packet_count.fetch_sub(1) <= 0)
-    {
-        ++packet_count;
-        return false;
-    }
-
-    auto result = send_queue.tryPop(res);
+    auto result = local_queue.tryPop(res);
     switch (result)
     {
     case MPMCQueueResult::OK:
@@ -443,17 +442,16 @@ bool LocalTunnelSender::tryReadForLocal(TrackedMppDataPacketPtr & res)
     }
     case MPMCQueueResult::CANCELLED:
     {
-        RUNTIME_ASSERT(!send_queue.getCancelReason().empty(), "Tunnel sender cancelled without reason");
+        RUNTIME_ASSERT(!local_queue.getCancelReason().empty(), "Tunnel sender cancelled without reason");
         bool old_value = false;
         if (cancel_reason_sent.compare_exchange_strong(old_value, true))
-            res = std::make_shared<TrackedMppDataPacket>(getPacketWithError(send_queue.getCancelReason()), current_memory_tracker);
+            res = std::make_shared<TrackedMppDataPacket>(getPacketWithError(local_queue.getCancelReason()), current_memory_tracker);
         else
             consumerFinish("");
         return true;
     }
     case MPMCQueueResult::EMPTY:
     {
-        ++packet_count;
         return false;
     }
     default:
@@ -466,15 +464,16 @@ bool LocalTunnelSender::tryReadForLocal(TrackedMppDataPacketPtr & res)
 
 MPMCQueueResult LocalTunnelSender::nativePush(const TrackedMppDataPacketPtr & data)
 {
-    if (packet_count.fetch_add(1) >= send_queue_size)
-    {
-        --packet_count;
-        return MPMCQueueResult::FULL;
-    }
+    return local_queue.tryPush(data);
+}
 
-    auto res = TunnelSender::nativePush(data);
-    if (res != MPMCQueueResult::OK)
-        --packet_count;
-    return res;
+bool LocalTunnelSender::finish()
+{
+    return local_queue.finish();
+}
+
+void LocalTunnelSender::cancelWith(const String & reason)
+{
+    local_queue.cancelWith(reason);
 }
 } // namespace DB
