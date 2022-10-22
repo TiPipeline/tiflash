@@ -33,91 +33,73 @@ enum class LocalTunnelQueueStatus
 class LocalTunnelQueue
 {
 public:
-    explicit LocalTunnelQueue(size_t queue_size_): queue_size(queue_size_) {}
+    explicit LocalTunnelQueue(size_t queue_size_)
+        : queue_size(queue_size_)
+        , queue(MPMCQueue<TrackedMppDataPacketPtr>(queue_size))
+    {}
 
-    MPMCQueueResult tryPush(const TrackedMppDataPacketPtr & event)
+    MPMCQueueResult tryPush(const TrackedMppDataPacketPtr & packet)
     {
-        switch (status.load())
-        {
-        case LocalTunnelQueueStatus::running:
+        assert(packet);
+        if (is_counting.load())
         {
             if (cur_count.fetch_add(1) >= queue_size)
             {
                 --cur_count;
                 return MPMCQueueResult::FULL;
             }
-            std::lock_guard lock(mutex);
-            queue.push_back(event);
-            return MPMCQueueResult::OK;
+            auto res = queue.tryPush(packet);
+            if (res != MPMCQueueResult::OK)
+                --cur_count;
+            return res;
         }
-        case LocalTunnelQueueStatus::cancelled:
-            return MPMCQueueResult::CANCELLED;
-        case LocalTunnelQueueStatus::finished:
-        default:
-            return MPMCQueueResult::FINISHED;
+        else
+        {
+            return queue.tryPush(packet);
         }
     }
-    MPMCQueueResult tryPop(TrackedMppDataPacketPtr & event)
+    MPMCQueueResult tryPop(TrackedMppDataPacketPtr & packet)
     {
-        switch (status.load())
-        {
-        case LocalTunnelQueueStatus::running:
+        assert(!packet);
+        if (is_counting.load())
         {
             if (cur_count.fetch_sub(1) <= 0)
             {
                 ++cur_count;
                 return MPMCQueueResult::EMPTY;
             }
-            std::lock_guard lock(mutex);
-            if (queue.empty())
-            {
+            auto res = queue.tryPop(packet);
+            if (res != MPMCQueueResult::OK)
                 ++cur_count;
-                return MPMCQueueResult::EMPTY;
-            }
-            event = std::move(queue.front());
-            queue.pop_front();
-            return MPMCQueueResult::OK;
+            return res;
         }
-        case LocalTunnelQueueStatus::cancelled:
-            return MPMCQueueResult::CANCELLED;
-        case LocalTunnelQueueStatus::finished:
-        default:
-            return MPMCQueueResult::FINISHED;
+        else
+        {
+            return queue.tryPop(packet);
         }
     }
 
     bool finish()
     {
-        LocalTunnelQueueStatus running_status = LocalTunnelQueueStatus::running;
-        return status.compare_exchange_strong(running_status, LocalTunnelQueueStatus::finished);
+        is_counting = false;
+        return queue.finish();
     }
     bool cancelWith(const String & reason)
     {
-        LocalTunnelQueueStatus running_status = LocalTunnelQueueStatus::running;
-        if (status.compare_exchange_strong(running_status, LocalTunnelQueueStatus::cancelled))
-        {
-            std::lock_guard lock(mutex);
-            cancel_reason = reason;
-            return true;
-        }
-        else
-            return false;
+        is_counting = false;
+        return queue.cancelWith(reason);
     }
 
     const String & getCancelReason() const
     {
-        std::lock_guard lock(mutex);
-        RUNTIME_ASSERT(status == LocalTunnelQueueStatus::cancelled);
-        return cancel_reason;
+        return queue.getCancelReason();
     }
 
 private:
-    int32_t queue_size;
-    mutable std::mutex mutex;
-    std::deque<TrackedMppDataPacketPtr> queue;
-    
+    const int32_t queue_size;
+    MPMCQueue<TrackedMppDataPacketPtr> queue;
+
     std::atomic_int32_t cur_count{0};
-    std::atomic<LocalTunnelQueueStatus> status{LocalTunnelQueueStatus::running};
-    String cancel_reason;
+    std::atomic_bool is_counting{true};
 };
 } // namespace DB

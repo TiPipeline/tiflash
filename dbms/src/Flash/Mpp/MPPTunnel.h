@@ -67,35 +67,20 @@ class TunnelSender : private boost::noncopyable
 {
 public:
     virtual ~TunnelSender() = default;
-    TunnelSender(size_t queue_size, MemoryTrackerPtr & memory_tracker_, const LoggerPtr & log_, const String & tunnel_id_)
+    TunnelSender(MemoryTrackerPtr & memory_tracker_, const LoggerPtr & log_, const String & tunnel_id_)
         : memory_tracker(memory_tracker_)
-        , send_queue(MPMCQueue<TrackedMppDataPacketPtr>(queue_size))
-        , send_queue_size(queue_size)
         , log(log_)
         , tunnel_id(tunnel_id_)
     {
     }
 
-    virtual MPMCQueueResult nativePush(const TrackedMppDataPacketPtr & data)
-    {
-        data->switchMemTracker(getMemoryTracker());
-        return send_queue.tryPush(data);
-    }
+    virtual MPMCQueueResult tryPush(const TrackedMppDataPacketPtr & data) = 0;
 
-    virtual bool push(const mpp::MPPDataPacket & data)
-    {
-        return send_queue.push(std::make_shared<TrackedMppDataPacket>(data, getMemoryTracker())) == MPMCQueueResult::OK;
-    }
+    virtual bool push(const mpp::MPPDataPacket & data) = 0;
 
-    virtual void cancelWith(const String & reason)
-    {
-        send_queue.cancelWith(reason);
-    }
+    virtual void cancelWith(const String & reason) = 0;
 
-    virtual bool finish()
-    {
-        return send_queue.finish();
-    }
+    virtual bool finish() = 0;
 
     void consumerFinish(const String & err_msg);
     String getConsumerFinishMsg()
@@ -148,8 +133,6 @@ protected:
         std::atomic<bool> msg_has_set{false};
     };
     MemoryTrackerPtr memory_tracker;
-    MPMCQueue<TrackedMppDataPacketPtr> send_queue;
-    int32_t send_queue_size;
     ConsumerState consumer_state;
     const LoggerPtr log;
     const String tunnel_id;
@@ -159,12 +142,37 @@ protected:
 class SyncTunnelSender : public TunnelSender
 {
 public:
-    using Base = TunnelSender;
-    using Base::Base;
+    SyncTunnelSender(size_t queue_size, MemoryTrackerPtr & memory_tracker_, const LoggerPtr & log_, const String & tunnel_id_)
+        : TunnelSender(memory_tracker_, log_, tunnel_id_)
+        , send_queue(MPMCQueue<TrackedMppDataPacketPtr>(queue_size))
+    {}
+
+    MPMCQueueResult tryPush(const TrackedMppDataPacketPtr & data) override
+    {
+        data->switchMemTracker(getMemoryTracker());
+        return send_queue.tryPush(data);
+    }
+
+    bool push(const mpp::MPPDataPacket & data) override
+    {
+        return send_queue.push(std::make_shared<TrackedMppDataPacket>(data, getMemoryTracker())) == MPMCQueueResult::OK;
+    }
+
+    void cancelWith(const String & reason) override
+    {
+        send_queue.cancelWith(reason);
+    }
+
+    bool finish() override
+    {
+        return send_queue.finish();
+    }
+
     ~SyncTunnelSender() override;
     void startSendThread(PacketWriter * writer);
 
 private:
+    MPMCQueue<TrackedMppDataPacketPtr> send_queue;
     friend class tests::TestMPPTunnel;
     void sendJob(PacketWriter * writer);
     std::shared_ptr<ThreadManager> thread_manager;
@@ -175,17 +183,17 @@ class AsyncTunnelSender : public TunnelSender
 {
 public:
     AsyncTunnelSender(size_t queue_size, MemoryTrackerPtr & memory_tracker, const LoggerPtr & log_, const String & tunnel_id_, grpc_call * call_)
-        : TunnelSender(0, memory_tracker, log_, tunnel_id_)
+        : TunnelSender(memory_tracker, log_, tunnel_id_)
         , queue(queue_size, call_, log_)
     {}
 
     /// For gtest usage.
     AsyncTunnelSender(size_t queue_size, MemoryTrackerPtr & memoryTracker, const LoggerPtr & log_, const String & tunnel_id_, GRPCKickFunc func)
-        : TunnelSender(0, memoryTracker, log_, tunnel_id_)
+        : TunnelSender(memoryTracker, log_, tunnel_id_)
         , queue(queue_size, func)
     {}
 
-    MPMCQueueResult nativePush(const TrackedMppDataPacketPtr & data) override
+    MPMCQueueResult tryPush(const TrackedMppDataPacketPtr & data) override
     {
         data->switchMemTracker(getMemoryTracker());
         return queue.tryPush(data);
@@ -225,23 +233,40 @@ private:
 class LocalTunnelSender : public TunnelSender
 {
 public:
-    using Base = TunnelSender;
-    using Base::Base;
-
-    LocalTunnelSender(size_t queue_size, MemoryTrackerPtr & memory_tracker_, const LoggerPtr & log_, const String & tunnel_id_);
+    LocalTunnelSender(size_t queue_size, MemoryTrackerPtr & memory_tracker_, const LoggerPtr & log_, const String & tunnel_id_)
+        : TunnelSender(memory_tracker_, log_, tunnel_id_)
+        , local_queue(queue_size)
+        // , local_queue(MPMCQueue<TrackedMppDataPacketPtr>(queue_size))
+    {}
 
     TrackedMppDataPacketPtr readForLocal();
     bool tryReadForLocal(TrackedMppDataPacketPtr & res);
 
-    MPMCQueueResult nativePush(const TrackedMppDataPacketPtr & data) override;
+    bool push(const mpp::MPPDataPacket &) override
+    {
+        throw Exception("unsupport!");
+    }
 
-    bool finish() override;
+    MPMCQueueResult tryPush(const TrackedMppDataPacketPtr & data) override
+    {
+        data->switchMemTracker(getMemoryTracker());
+        return local_queue.tryPush(data);
+    }
 
-    void cancelWith(const String & reason) override;
+    bool finish() override
+    {
+        return local_queue.finish();
+    }
+
+    void cancelWith(const String & reason) override
+    {
+        local_queue.cancelWith(reason);
+    }
 
 private:
     std::atomic_bool cancel_reason_sent = false;
     LocalTunnelQueue local_queue;
+    // MPMCQueue<TrackedMppDataPacketPtr> local_queue;
 };
 
 using TunnelSenderPtr = std::shared_ptr<TunnelSender>;

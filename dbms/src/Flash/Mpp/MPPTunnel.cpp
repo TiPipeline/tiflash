@@ -143,7 +143,7 @@ bool MPPTunnel::asyncWrite(const TrackedMppDataPacketPtr & data)
             return false;
     }
 
-    auto res = tunnel_sender->nativePush(data);
+    auto res = tunnel_sender->tryPush(data);
     switch (res)
     {
     case MPMCQueueResult::OK:
@@ -399,33 +399,29 @@ void SyncTunnelSender::startSendThread(PacketWriter * writer)
     });
 }
 
-LocalTunnelSender::LocalTunnelSender(size_t queue_size, MemoryTrackerPtr & memory_tracker_, const LoggerPtr & log_, const String & tunnel_id_)
-    : TunnelSender(queue_size, memory_tracker_, log_, tunnel_id_)
-    , local_queue(queue_size)
-{}
-
 std::shared_ptr<DB::TrackedMppDataPacket> LocalTunnelSender::readForLocal()
 {
-    TrackedMppDataPacketPtr res;
-    auto result = send_queue.pop(res);
-    if (result == MPMCQueueResult::OK)
-    {
-        // switch tunnel's memory tracker into receiver's
-        res->switchMemTracker(current_memory_tracker);
-        return res;
-    }
-    else if (result == MPMCQueueResult::CANCELLED)
-    {
-        RUNTIME_ASSERT(!send_queue.getCancelReason().empty(), "Tunnel sender cancelled without reason");
-        if (!cancel_reason_sent)
-        {
-            cancel_reason_sent = true;
-            res = std::make_shared<TrackedMppDataPacket>(getPacketWithError(send_queue.getCancelReason()), current_memory_tracker);
-            return res;
-        }
-    }
-    consumerFinish("");
-    return nullptr;
+    // TrackedMppDataPacketPtr res;
+    // auto result = send_queue.pop(res);
+    // if (result == MPMCQueueResult::OK)
+    // {
+    //     // switch tunnel's memory tracker into receiver's
+    //     res->switchMemTracker(current_memory_tracker);
+    //     return res;
+    // }
+    // else if (result == MPMCQueueResult::CANCELLED)
+    // {
+    //     RUNTIME_ASSERT(!send_queue.getCancelReason().empty(), "Tunnel sender cancelled without reason");
+    //     if (!cancel_reason_sent)
+    //     {
+    //         cancel_reason_sent = true;
+    //         res = std::make_shared<TrackedMppDataPacket>(getPacketWithError(send_queue.getCancelReason()), current_memory_tracker);
+    //         return res;
+    //     }
+    // }
+    // consumerFinish("");
+    // return nullptr;
+    throw Exception("unsupport");
 }
 
 bool LocalTunnelSender::tryReadForLocal(TrackedMppDataPacketPtr & res)
@@ -460,20 +456,5 @@ bool LocalTunnelSender::tryReadForLocal(TrackedMppDataPacketPtr & res)
         return true;
     }
     }
-}
-
-MPMCQueueResult LocalTunnelSender::nativePush(const TrackedMppDataPacketPtr & data)
-{
-    return local_queue.tryPush(data);
-}
-
-bool LocalTunnelSender::finish()
-{
-    return local_queue.finish();
-}
-
-void LocalTunnelSender::cancelWith(const String & reason)
-{
-    local_queue.cancelWith(reason);
 }
 } // namespace DB
