@@ -21,7 +21,6 @@
 #include <Flash/Mpp/GRPCSendQueue.h>
 #include <Flash/Mpp/PacketWriter.h>
 #include <Flash/Mpp/TrackedMppDataPacket.h>
-#include <Flash/Mpp/LocalTunnelQueue.h>
 #include <Flash/Statistics/ConnectionProfileInfo.h>
 #include <common/logger_useful.h>
 #include <common/types.h>
@@ -235,8 +234,7 @@ class LocalTunnelSender : public TunnelSender
 public:
     LocalTunnelSender(size_t queue_size, MemoryTrackerPtr & memory_tracker_, const LoggerPtr & log_, const String & tunnel_id_)
         : TunnelSender(memory_tracker_, log_, tunnel_id_)
-        , local_queue(queue_size)
-        // , local_queue(MPMCQueue<TrackedMppDataPacketPtr>(queue_size))
+        , local_queue(MPMCQueue<TrackedMppDataPacketPtr>(queue_size))
     {}
 
     TrackedMppDataPacketPtr readForLocal();
@@ -264,9 +262,8 @@ public:
     }
 
 private:
-    std::atomic_bool cancel_reason_sent = false;
-    LocalTunnelQueue local_queue;
-    // MPMCQueue<TrackedMppDataPacketPtr> local_queue;
+    std::atomic_bool cancel_reason_sent{false};
+    MPMCQueue<TrackedMppDataPacketPtr> local_queue;
 };
 
 using TunnelSenderPtr = std::shared_ptr<TunnelSender>;
