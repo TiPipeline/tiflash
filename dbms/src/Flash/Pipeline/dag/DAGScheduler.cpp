@@ -39,7 +39,9 @@ DAGScheduler::DAGScheduler(
     , mpp_task_id(mpp_task_id_)
     , log(Logger::get("DAGScheduler", req_id))
     , task_scheduler(context.getTMTContext().getMPPTaskManager()->getPipelineTaskScheduler())
-{}
+{
+    group_id = 0;
+}
 
 std::pair<bool, String> DAGScheduler::run(
     const PhysicalPlanNodePtr & plan_node,
@@ -129,7 +131,7 @@ PipelinePtr DAGScheduler::genPipeline(PhysicalPlanNodePtr plan_node, PipelineIDG
         plan_node = physical_breaker->after();
     }
 
-    auto pipeline = std::make_shared<Pipeline>(plan_node, mpp_task_id, id_generator.nextID(), log->identifier());
+    auto pipeline = std::make_shared<Pipeline>(plan_node, mpp_task_id, id_generator.nextID(), group_id, log->identifier());
     addPipeline(pipeline);
     auto trigger = std::make_shared<PipelineTrigger>(pipeline, task_scheduler, context);
 
@@ -195,7 +197,7 @@ PipelinePtr DAGScheduler::createNonJoinedPipelines(const PipelinePtr & pipeline,
         auto [index, non_joined_plan] = non_joined[i];
         auto id = id_generator.nextID();
         auto non_joined_root = gen_plan_tree(pipeline->getPlanNode(), index, non_joined_plan);
-        auto non_joined_pipeline = std::make_shared<Pipeline>(non_joined_root, mpp_task_id, id, log->identifier());
+        auto non_joined_pipeline = std::make_shared<Pipeline>(non_joined_root, mpp_task_id, id, group_id, log->identifier());
         addPipeline(non_joined_pipeline);
 
         auto trigger = std::make_shared<PipelineTrigger>(non_joined_pipeline, task_scheduler, context);

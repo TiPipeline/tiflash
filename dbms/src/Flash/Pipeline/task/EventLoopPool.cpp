@@ -89,15 +89,13 @@ bool EventLoopPool::popTask(PipelineTaskPtr & task)
         {
             if (unlikely(is_closed))
                 return false;
-            if (!cpu_event_queue.empty())
+            if (!work_groups.empty())
                 break;
             cv.wait(lock);
         }
 
-        assert(!cpu_event_queue.empty());
-        task = std::move(cpu_event_queue.front());
-        assert(task);
-        cpu_event_queue.pop_front();
+        assert(!work_groups.empty());
+        work_groups.pop(task);
     }
     return true;
 }
@@ -130,7 +128,7 @@ void EventLoopPool::submitCPU(PipelineTaskPtr && task)
     LOG_DEBUG(logger, "submit {} to cpu event loop", task->toString());
     {
         std::lock_guard<std::mutex> lock(global_mutex);
-        cpu_event_queue.emplace_back(std::move(task));
+        work_groups.submit(std::move(task));
     }
     cv.notify_one();
 }
@@ -145,7 +143,7 @@ void EventLoopPool::submitCPU(std::vector<PipelineTaskPtr> & tasks)
         auto & task = tasks.back();
         assert(task);
         LOG_DEBUG(logger, "submit {} to cpu event loop", task->toString());
-        cpu_event_queue.emplace_back(std::move(task));
+        work_groups.submit(std::move(task));
         tasks.pop_back();
         cv.notify_one();
     }

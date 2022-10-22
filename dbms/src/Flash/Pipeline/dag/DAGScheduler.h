@@ -91,6 +91,8 @@ private:
 
     MPPTaskId mpp_task_id;
 
+    size_t group_id;
+
     LoggerPtr log;
 
     TaskScheduler & task_scheduler;

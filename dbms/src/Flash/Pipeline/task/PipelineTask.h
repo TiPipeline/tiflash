@@ -48,12 +48,14 @@ public:
         UInt32 task_id_,
         UInt32 pipeline_id_,
         const MPPTaskId & mpp_task_id_,
+        size_t group_id_,
         const TransformsPtr & transforms_,
         const PipelineSignalPtr & signal_,
         const std::vector<PipelineTriggerPtr> & next_triggers_)
         : task_id(task_id_)
         , pipeline_id(pipeline_id_)
         , mpp_task_id(mpp_task_id_)
+        , group_id(group_id_)
         , transforms(transforms_)
         , signal(signal_)
         , next_triggers(next_triggers_)
@@ -69,6 +71,8 @@ public:
     bool tryToIOMode();
 
     String toString() const;
+
+    size_t groupId() { return group_id; }
 
 public:
     PipelineTaskStatus status = PipelineTaskStatus::cpu_run;
@@ -89,6 +93,8 @@ private:
     UInt32 task_id;
     UInt32 pipeline_id;
     MPPTaskId mpp_task_id;
+
+    const size_t group_id;
 
     TransformsPtr transforms;
     PipelineSignalPtr signal;

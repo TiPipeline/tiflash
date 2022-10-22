@@ -18,6 +18,7 @@
 #include <Flash/Pipeline/task/PipelineTask.h>
 #include <Flash/Pipeline/task/IOPoller.h>
 
+#include <array>
 #include <memory>
 #include <thread>
 
@@ -40,6 +41,87 @@ private:
     LoggerPtr logger = Logger::get(fmt::format("event loop {}", loop_id));
 };
 using EventLoopPtr = std::unique_ptr<EventLoop>;
+
+struct WorkGroup
+{
+    explicit WorkGroup(size_t priority_)
+        : priority(priority_)
+        , origin_priority(priority_)
+    {
+        assert(priority_ > 0);
+    }
+    
+    // priority
+    bool isZeroPriority() { return 0 == priority; }
+    void resetPriority() { priority = origin_priority; }
+
+    bool empty() { return cpu_event_queue.empty(); }
+
+    void pop(PipelineTaskPtr & task)
+    {
+        if (priority > 0)
+            --priority;
+        assert(!cpu_event_queue.empty());
+        task = std::move(cpu_event_queue.front());
+        assert(task);
+        cpu_event_queue.pop_front();
+    }
+
+    void push(PipelineTaskPtr && task)
+    {
+        cpu_event_queue.emplace_back(std::move(task));
+    }
+
+    std::deque<PipelineTaskPtr> cpu_event_queue;
+    size_t priority;
+    size_t origin_priority;
+};
+
+struct WorkGroups
+{
+    bool empty() { return work_groups[0].empty() && work_groups[1].empty(); }
+
+    void submit(PipelineTaskPtr && task)
+    {
+        work_groups[task->groupId()].push(std::move(task));
+    }
+
+    void pop(PipelineTaskPtr & task)
+    {
+        assert(!empty());
+        if (work_groups[0].empty())
+        {
+            work_groups[1].pop(task);
+        }
+        else if (work_groups[1].empty())
+        {
+            work_groups[0].pop(task);
+        }
+        else
+        {
+            while (true)
+            {
+                if (work_groups[0].isZeroPriority() && work_groups[1].isZeroPriority())
+                {
+                    work_groups[0].resetPriority();
+                    work_groups[1].resetPriority();
+                    continue;
+                }
+                else if (work_groups[0].priority > work_groups[1].priority)
+                {
+                    work_groups[0].pop(task);
+                }
+                else
+                {
+                    work_groups[1].pop(task);
+                }
+                return;
+            }
+        }
+    }
+
+    std::array<WorkGroup, 2> work_groups{WorkGroup(1), WorkGroup(2)};
+};
 
 class EventLoopPool
 {
@@ -66,7 +148,7 @@ private:
     mutable std::mutex global_mutex;
     std::condition_variable cv;
     bool is_closed = false;
-    std::deque<PipelineTaskPtr> cpu_event_queue;
+    WorkGroups work_groups;
 
     std::vector<EventLoopPtr> cpu_loops;
 

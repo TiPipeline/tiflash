@@ -36,6 +36,7 @@ public:
         const PhysicalPlanNodePtr & plan_node_,
         const MPPTaskId & mpp_task_id_,
         UInt32 id_,
+        size_t group_id_,
         const String & req_id);
 
     std::vector<PipelineTaskPtr> transform(Context & context, size_t concurrency);
@@ -60,6 +61,8 @@ private:
     MPPTaskId mpp_task_id;
 
     UInt32 id;
+
+    const size_t group_id;
 
     PipelineSignalPtr signal;
     std::vector<PipelineTriggerPtr> next_triggers;

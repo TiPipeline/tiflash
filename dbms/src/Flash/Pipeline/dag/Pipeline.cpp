@@ -31,10 +31,12 @@ Pipeline::Pipeline(
     const PhysicalPlanNodePtr & plan_node_,
     const MPPTaskId & mpp_task_id_,
     UInt32 id_,
+    size_t group_id_,
     const String & req_id)
     : plan_node(plan_node_)
     , mpp_task_id(mpp_task_id_)
     , id(id_)
+    , group_id(group_id_)
     , log(Logger::get("Pipeline", req_id, fmt::format("<pipeline_id:{}>", id)))
 {
     assert(plan_node);
@@ -54,7 +56,7 @@ std::vector<PipelineTaskPtr> Pipeline::transform(Context & context, size_t concu
     assert(signal);
     signal->init(active_task_num);
     for (const auto & transforms : pipeline.transforms_vec)
-        tasks.emplace_back(std::make_unique<PipelineTask>(--active_task_num, id, mpp_task_id, transforms, signal, next_triggers));
+        tasks.emplace_back(std::make_unique<PipelineTask>(--active_task_num, id, mpp_task_id, group_id, transforms, signal, next_triggers));
     return tasks;
 }
 
