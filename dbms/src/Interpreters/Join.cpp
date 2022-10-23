@@ -240,7 +240,7 @@ static void initImpl(Maps & maps, Join::Type type, size_t build_concurrency)
 
 #define M(TYPE)                                                                                          \
     case Join::Type::TYPE:                                                                               \
-        maps.TYPE = std::make_unique<typename decltype(maps.TYPE)::element_type>(4 * build_concurrency); \
+        maps.TYPE = std::make_unique<typename decltype(maps.TYPE)::element_type>(build_concurrency);     \
         break;
         APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
@@ -628,11 +628,10 @@ void NO_INLINE insertFromBlockImplTypeCaseWithLock(
         segment_index_info[segment_index].push_back(i);
         keyHolderDiscardKey(key_holder);
     }
-    size_t start_index = 4 * stream_index;
     for (size_t insert_index = 0; insert_index < segment_index_info.size(); insert_index++)
     {
         FAIL_POINT_TRIGGER_EXCEPTION(FailPoints::random_join_build_failpoint);
-        size_t segment_index = (insert_index + start_index) % segment_index_info.size();
+        size_t segment_index = (insert_index + stream_index) % segment_index_info.size();
         if (segment_index == segment_size)
         {
             /// null value
@@ -793,15 +792,12 @@ void reserveImpl(Maps & maps, Join::Type type, size_t rows, size_t index)
     case Join::Type::CROSS:
         break;
 
-#define M(TYPE)                                                                        \
-    case Join::Type::TYPE:                                                             \
-    {                                                                                  \
-        auto estimateRowsPerSegment = rows * 1.5 / 4;                                  \
-        for (size_t i = 0; i < 4; ++i)                                                 \
-        {                                                                              \
-            maps.TYPE->getSegmentTable(4 * index + i).reserve(estimateRowsPerSegment); \
-        }                                                                              \
-        break;                                                                         \
+#define M(TYPE)                                                                \
+    case Join::Type::TYPE:                                                     \
+    {                                                                          \
+        auto estimateRowsPerSegment = rows * 1.5;                              \
+        maps.TYPE->getSegmentTable(index).reserve(estimateRowsPerSegment);     \
+        break;                                                                 \
     }
         APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
