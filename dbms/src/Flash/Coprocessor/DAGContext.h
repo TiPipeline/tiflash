@@ -164,6 +164,11 @@ public:
         // only mpp task has join executor.
         initExecutorIdToJoinIdMap();
         initOutputInfo();
+
+        if (dag_request->has_max_warning_count())
+        {
+            is_from_hack_tidb = (dag_request->max_warning_count() == 3);
+        }
     }
 
     // for test
@@ -362,6 +367,8 @@ public:
     std::vector<String> list_based_executors_order;
 
     bool is_pipeline_mode = false;
+
+    bool is_from_hack_tidb = false;
 
 private:
     void initExecutorIdToJoinIdMap();

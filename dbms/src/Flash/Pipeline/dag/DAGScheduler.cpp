@@ -25,6 +25,7 @@
 #include <Flash/Pipeline/dag/PipelineEvent.h>
 #include <Flash/Pipeline/dag/PipelineTrigger.h>
 #include <Flash/Pipeline/dag/PipelineSignal.h>
+#include <Flash/Coprocessor/DAGContext.h>
 
 #include <magic_enum.hpp>
 
@@ -40,7 +41,7 @@ DAGScheduler::DAGScheduler(
     , log(Logger::get("DAGScheduler", req_id))
     , task_scheduler(context.getTMTContext().getMPPTaskManager()->getPipelineTaskScheduler())
 {
-    group_id = 0;
+    group_id = context.getDAGContext()->is_from_hack_tidb ? 1 : 0;
 }
 
 std::pair<bool, String> DAGScheduler::run(
